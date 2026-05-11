@@ -1,0 +1,16 @@
+{
+  "version": "1.0.1",
+  "business_profile": {
+    "name": "Pro CRM Solutions",
+    "industry": "Customer Relationship Management",
+    "location": "Colombo, Sri Lanka",
+    "operating_hours": "9:00 AM - 6:00 PM (Mon-Fri)",
+    "description": "We provide premium WhatsApp CRM solutions for modern businesses."
+  },
+  "faqs": [
+    {
+      "question": "What is Pro CRM?",
+      "answer": "Pro CRM is a specialized WhatsApp CRM that integrates directly with Meta Cloud API to manage sales and support conversations."
+    }
+  ]
+}

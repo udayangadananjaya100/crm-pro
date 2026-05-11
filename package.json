@@ -1,0 +1,59 @@
+{
+  "name": "pro-crm",
+  "version": "2.1.0",
+  "description": "Production-grade WhatsApp CRM integrated with Meta Cloud API — AI-powered customer management for Sri Lankan businesses",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "db:migrate": "node db/migrate.js",
+    "db:seed": "node db/seed.js",
+    "db:setup": "node db/migrate.js && node db/seed.js",
+    "simulate": "node src/tools/simulator.js",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "setup": "docker compose up -d && timeout /t 5 && node db/migrate.js && node db/seed.js",
+    "test": "echo \"Tests coming soon\" && exit 0"
+  },
+  "keywords": [
+    "whatsapp",
+    "crm",
+    "meta-cloud-api",
+    "ai",
+    "sinhala",
+    "sri-lanka"
+  ],
+  "author": "Vieora Digital Solutions",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.0",
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.9.0",
+    "bullmq": "^5.31.0",
+    "compression": "^1.7.5",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^2.1.1",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.13.3",
+    "pg-pool": "^3.7.1",
+    "socket.io": "^4.8.3",
+    "uuid": "^11.1.0",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

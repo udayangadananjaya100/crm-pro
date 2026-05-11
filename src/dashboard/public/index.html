@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Pro CRM Admin Dashboard — WhatsApp Business CRM Management">
+    <title>Pro CRM — Admin Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <!-- Setup Wizard Screen -->
+    <div id="setup-screen" class="login-screen hidden" style="background: var(--bg-dashboard);">
+        <div class="login-card" style="max-width: 500px; padding: 2.5rem;">
+            <div class="login-logo">
+                <h1>Setup Pro CRM</h1>
+                <p>Welcome! Let's get your CRM configured.</p>
+            </div>
+            <form id="setup-form" onsubmit="handleSetup(event)">
+                
+                <h3 style="font-size: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">1. Admin Account</h3>
+                <div class="form-group">
+                    <label>Admin Name</label>
+                    <input type="text" id="setup-admin-name" placeholder="John Doe" required>
+                </div>
+                <div class="form-group">
+                    <label>Admin Email</label>
+                    <input type="email" id="setup-admin-email" placeholder="admin@yourcompany.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Admin Password</label>
+                    <input type="password" id="setup-admin-password" placeholder="••••••••" required minlength="6">
+                </div>
+
+                <h3 style="font-size: 1rem; margin-top: 1.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">2. Branding</h3>
+                <div class="form-group">
+                    <label>Company Name</label>
+                    <input type="text" id="setup-company-name" placeholder="Your Company Ltd." required>
+                </div>
+
+                <h3 style="font-size: 1rem; margin-top: 1.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">3. Integrations</h3>
+                <div class="form-group">
+                    <label>WhatsApp Phone ID (Optional for now)</label>
+                    <input type="text" id="setup-wa-phone-id" placeholder="1029384756">
+                </div>
+                <div class="form-group">
+                    <label>WhatsApp Access Token (Optional for now)</label>
+                    <input type="password" id="setup-wa-token" placeholder="EAAG...">
+                </div>
+                <div class="form-group">
+                    <label>Gemini API Key (Optional for now)</label>
+                    <input type="password" id="setup-gemini-key" placeholder="AIza...">
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full" id="setup-btn" style="margin-top: 1.5rem;">
+                    <span>Complete Setup</span>
+                </button>
+                <p id="setup-error" class="error-text"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-card">
+            <div class="login-logo">
+                <div class="logo-icon">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                        <rect width="40" height="40" rx="12" fill="url(#grad1)"/>
+                        <path d="M20 10C14.48 10 10 14.48 10 20C10 21.85 10.5 23.55 11.35 25L10 30L15.15 28.7C16.5 29.45 18.2 29.95 20 29.95C25.52 29.95 30 25.47 30 19.95C30 14.43 25.52 10 20 10ZM25.35 23.5C25.1 24.15 24 24.7 23.4 24.8C22.85 24.9 22.15 24.95 21.35 24.65C20.85 24.45 20.2 24.2 19.35 23.8C16.8 22.55 15.2 19.95 15.05 19.75C14.9 19.55 14 18.3 14 17C14 15.7 14.65 15.1 14.9 14.8C15.15 14.5 15.45 14.45 15.6 14.45H16.05C16.2 14.45 16.4 14.4 16.6 14.85C16.8 15.35 17.3 16.65 17.35 16.75C17.4 16.85 17.45 16.95 17.35 17.15C16.95 17.85 16.5 17.8 16.7 18.15C17.6 19.65 18.45 20.2 19.8 20.9C20.05 21.05 20.15 21 20.3 20.85C20.45 20.65 20.9 20.1 21.1 19.85C21.3 19.55 21.45 19.6 21.7 19.7L23.35 20.5C23.6 20.6 23.8 20.7 23.85 20.8C23.95 21 23.95 21.65 23.65 22.35L25.35 23.5Z" fill="white"/>
+                        <defs>
+                            <linearGradient id="grad1" x1="0" y1="0" x2="40" y2="40">
+                                <stop offset="0%" style="stop-color:#25D366"/>
+                                <stop offset="100%" style="stop-color:#128C7E"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h1>Pro CRM</h1>
+                <p>WhatsApp Business Management</p>
+            </div>
+            <form id="login-form" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" placeholder="admin@procrm.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+                    <span>Sign In</span>
+                </button>
+                <p id="login-error" class="error-text"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="dashboard hidden">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <div class="logo-dot"></div>
+                    <span>Pro CRM</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="overview" onclick="navigateTo('overview')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg>
+                    <span>Overview</span>
+                </a>
+                <a href="#" class="nav-item" data-page="analytics" onclick="navigateTo('analytics')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+                    <span>Analytics</span>
+                </a>
+                <a href="#" class="nav-item" data-page="conversations" onclick="navigateTo('conversations')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd"/></svg>
+                    <span>Conversations</span>
+                </a>
+                <a href="#" class="nav-item" data-page="contacts" onclick="navigateTo('contacts')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+                    <span>Contacts</span>
+                </a>
+                <a href="#" class="nav-item" data-page="audit" onclick="navigateTo('audit')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm2 10a1 1 0 10-2 0v3a1 1 0 102 0v-3zm2-3a1 1 0 011 1v5a1 1 0 11-2 0v-5a1 1 0 011-1zm4-1a1 1 0 10-2 0v7a1 1 0 102 0V8z" clip-rule="evenodd"/></svg>
+                    <span>Audit Logs</span>
+                </a>
+                <a href="#" class="nav-item" data-page="agents" id="nav-agents" onclick="navigateTo('agents')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM6 8a2 2 0 11-4 0 2 2 0 014 0zM11 18a4.993 4.993 0 00-3.723-4.803 2 2 0 01-3.136-1.503A6.985 6.985 0 001 16v1h10v-1zm8-1v-1a6.985 6.985 0 00-3.14-5.694 2.001 2.001 0 01-3.137 1.503A4.993 4.993 0 0011 18v1h8z"/></svg>
+                    <span>Agents</span>
+                </a>
+                <div style="padding:0.5rem 0.85rem;margin-top:0.5rem"><small style="color:var(--text-muted);text-transform:uppercase;font-size:0.65rem;font-weight:600;letter-spacing:1px">Dev Tools</small></div>
+                <a href="#" class="nav-item" data-page="simulator" onclick="navigateTo('simulator')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                    <span>Simulator</span>
+                </a>
+                <a href="#" class="nav-item" data-page="appointments" onclick="navigateTo('appointments')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path></svg>
+                    <span>Appointments</span>
+                </a>
+                <a href="#" class="nav-item" data-page="campaigns" onclick="navigateTo('campaigns')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"></path></svg>
+                    <span>Campaigns</span>
+                </a>
+                <a href="#" class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
+                    <span id="nav-knowledge-text">Knowledge Base</span>
+                </a>
+                <a href="#" class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+                    <span id="nav-settings-text">Settings</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar" id="user-avatar">A</div>
+                    <div class="user-details">
+                        <span class="user-name" id="user-name">Admin</span>
+                        <span class="user-role" id="user-role">admin</span>
+                    </div>
+                </div>
+                <button class="btn-icon" onclick="handleLogout()" title="Sign Out">
+                    <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm7 4.293l3.354 3.353a.5.5 0 010 .708l-3.354 3.353a.5.5 0 01-.708-.708L12.293 11H5.5a.5.5 0 010-1h6.793L9.293 7a.5.5 0 01.707-.707z" clip-rule="evenodd"/></svg>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <h2 id="page-title">Overview</h2>
+                </div>
+                <div class="topbar-right">
+                    <div class="status-badge online" id="system-status">
+                        <span class="status-dot"></span>
+                        <span id="system-status-text">System Online</span>
+                    </div>
+                    <div class="lang-toggle">
+                        <button class="lang-btn active" data-lang="en" onclick="switchLanguage('en')">EN</button>
+                        <button class="lang-btn" data-lang="si" onclick="switchLanguage('si')">සිං</button>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="showAddContactModal()" style="margin-right: 0.5rem;">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+                        <span>Add Contact</span>
+                    </button>
+                    <button class="btn-icon" id="theme-toggle" onclick="toggleTheme()" title="Switch Theme">
+                        <svg id="theme-icon-sun" class="hidden" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 5a7 7 0 100 14 7 7 0 000-14z"></path></svg>
+                        <svg id="theme-icon-moon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                    </button>
+                    <!-- Notification Bell -->
+                    <div class="notif-bell-wrapper" id="notif-bell-wrapper">
+                        <button class="btn-icon notif-bell" id="notif-bell" onclick="toggleNotificationPanel()" title="Notifications">
+                            <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg>
+                            <span class="notif-badge hidden" id="notif-badge">0</span>
+                        </button>
+                        <div class="notif-panel hidden" id="notif-panel">
+                            <div class="notif-panel-header">
+                                <h4>Notifications</h4>
+                                <button class="btn btn-sm btn-outline" onclick="markAllNotificationsRead()" style="font-size:0.65rem;padding:2px 8px;">Mark all read</button>
+                            </div>
+                            <div class="notif-list" id="notif-list">
+                                <div class="notif-empty">No new notifications</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Connected Users -->
+                    <div class="connected-users" id="connected-users" title="Connected users">
+                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+                        <span id="connected-count">1</span>
+                    </div>
+                    <button class="btn btn-sm btn-outline" onclick="refreshDashboard()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+                        <span id="btn-refresh-text">Refresh</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <div class="page-content">
+                <!-- Overview Page -->
+                <section id="page-overview" class="page active">
+                    <div class="stats-grid">
+                        <div class="stat-card gradient-green">
+                            <div class="stat-icon">📱</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="stat-contacts">—</span>
+                                <span class="stat-label" id="stat-label-contacts">Active Contacts</span>
+                            </div>
+                        </div>
+                        <div class="stat-card gradient-blue">
+                            <div class="stat-icon">💬</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="stat-conversations">—</span>
+                                <span class="stat-label" id="stat-label-convs">Open Conversations</span>
+                            </div>
+                        </div>
+                        <div class="stat-card gradient-purple">
+                            <div class="stat-icon">📈</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="stat-messages">—</span>
+                                <span class="stat-label" id="stat-label-msgs">Today's Messages</span>
+                            </div>
+                        </div>
+                        <div class="stat-card gradient-orange">
+                            <div class="stat-icon">⚠️</div>
+                            <div class="stat-info">
+                                <span class="stat-value" id="stat-sla-breaches">0</span>
+                                <span class="stat-label" id="stat-label-sla">SLA Breaches</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI PREDICTIVE ANALYTICS SECTION -->
+                    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; margin-top: 2rem; margin-bottom: 2rem;">
+                        <div class="card bg-glass" style="margin-bottom: 0;">
+                            <div class="card-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                                <h3 style="font-size: 0.9rem; display: flex; align-items: center; gap: 8px;">
+                                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                    Lead Temperature (AI)
+                                </h3>
+                            </div>
+                            <div class="card-body" style="padding: 1.25rem 0;">
+                                <div class="progress-stack" style="height: 10px; display: flex; border-radius: 5px; overflow: hidden; background: var(--bg-hover); margin-bottom: 1.25rem;">
+                                    <div id="lead-hot-bar" style="width: 0%; background: #ff4d4d; transition: width 0.8s ease-out;"></div>
+                                    <div id="lead-warm-bar" style="width: 0%; background: #ffa500; transition: width 0.8s ease-out;"></div>
+                                    <div id="lead-cold-bar" style="width: 0%; background: #4da3ff; transition: width 0.8s ease-out;"></div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                                    <div style="text-align: center;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">HOT</div>
+                                        <div id="count-hot" style="font-weight: 700; color: #ff4d4d; font-size: 1.1rem;">0</div>
+                                    </div>
+                                    <div style="text-align: center; border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color);">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">WARM</div>
+                                        <div id="count-warm" style="font-weight: 700; color: #ffa500; font-size: 1.1rem;">0</div>
+                                    </div>
+                                    <div style="text-align: center;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">COLD</div>
+                                        <div id="count-cold" style="font-weight: 700; color: #4da3ff; font-size: 1.1rem;">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card bg-glass" style="margin-bottom: 0;">
+                            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                                <h3 style="font-size: 0.9rem; display: flex; align-items: center; gap: 8px;">
+                                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                                    High-Value Target Leads (AI Priority)
+                                </h3>
+                                <span class="badge badge-purple" style="font-size: 0.65rem; padding: 2px 8px;">PREDICTIVE</span>
+                            </div>
+                            <div class="card-body" style="padding: 1rem 0;">
+                                <div id="top-leads-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
+                                    <div style="color: var(--text-muted); font-size: 0.8rem; padding: 0.5rem;">Analyzing customer behaviors...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <!-- System Health -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>System Health</h3>
+                                <button class="btn-icon" onclick="checkSystemHealth()" title="Re-check">
+                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+                                </button>
+                            </div>
+                            <div class="card-body" id="system-health">
+                                <div class="health-item">
+                                    <span>API Server</span>
+                                    <span class="badge badge-green" id="health-api">Checking...</span>
+                                </div>
+                                <div class="health-item">
+                                    <span>Database</span>
+                                    <span class="badge badge-gray" id="health-db">Checking...</span>
+                                </div>
+                                <div class="health-item">
+                                    <span>Redis</span>
+                                    <span class="badge badge-gray" id="health-redis">Checking...</span>
+                                </div>
+                                <div class="health-item">
+                                    <span>WhatsApp API</span>
+                                    <span class="badge badge-gray" id="health-whatsapp">Checking...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent Conversations -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 id="recent-convs-title">Recent Conversations</h3>
+                                <a href="#" class="link" onclick="navigateTo('conversations')">View All</a>
+                            </div>
+                            <div class="card-body" id="recent-conversations" style="padding: 0;">
+                                <div class="empty-state"><p>Loading recent chats...</p></div>
+                            </div>
+                        </div>
+
+                        <!-- Message Trends Chart -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Message Trends (Last 7 Days)</h3>
+                            </div>
+                            <div class="card-body" style="height: 300px;">
+                                <canvas id="message-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Background Tasks -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 id="background-tasks-title">Background Tasks</h3>
+                                <div id="queue-status-badge" class="badge badge-gray">Idle</div>
+                            </div>
+                            <div class="card-body" id="queue-stats">
+                                <div class="health-item">
+                                    <span>Messages Waiting</span>
+                                    <span class="badge badge-blue" id="queue-waiting">0</span>
+                                </div>
+                                <div class="health-item">
+                                    <span>Processing Now</span>
+                                    <span class="badge badge-purple" id="queue-active">0</span>
+                                </div>
+                                <div class="health-item">
+                                    <span>Completed Today</span>
+                                    <span class="badge badge-green" id="queue-completed">0</span>
+                                </div>
+                                <div class="health-item">
+                                    <span>Failed/Retrying</span>
+                                    <span class="badge badge-red" id="queue-failed">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Recent Activity -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 id="recent-activity-title">Recent Activity</h3>
+                                <a href="#" class="link" onclick="navigateTo('audit')">View Logs</a>
+                            </div>
+                            <div class="card-body" id="recent-activity" style="padding: 0;">
+                                <div class="empty-state"><p>Loading activity...</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Analytics Page (Phase 3) -->
+                <section id="page-analytics" class="page">
+                    <div class="page-actions" style="margin-bottom: 2rem;">
+                        <div class="filter-group">
+                            <button class="btn btn-sm btn-outline active" data-days="7" onclick="setAnalyticsRange(7, this)">7 Days</button>
+                            <button class="btn btn-sm btn-outline" data-days="30" onclick="setAnalyticsRange(30, this)">30 Days</button>
+                            <button class="btn btn-sm btn-outline" data-days="90" onclick="setAnalyticsRange(90, this)">90 Days</button>
+                        </div>
+                        <button class="btn btn-primary" onclick="exportAnalyticsPDF()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            Export PDF Report
+                        </button>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <!-- Main Volume Chart -->
+                        <div class="card bg-glass" style="grid-column: span 2;">
+                            <div class="card-header">
+                                <h3>Message Volume Trends</h3>
+                                <p style="font-size: 0.75rem; color: var(--text-muted);">Inbound vs Outbound message flow</p>
+                            </div>
+                            <div class="card-body" style="height: 350px;">
+                                <canvas id="analytics-volume-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Funnel Card -->
+                        <div class="card bg-glass">
+                            <div class="card-header">
+                                <h3>Conversion Funnel</h3>
+                                <p style="font-size: 0.75rem; color: var(--text-muted);">Lead to appointment progression</p>
+                            </div>
+                            <div class="card-body">
+                                <div id="funnel-container" class="funnel-viz">
+                                    <!-- Funnel injected here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AI Metrics Card -->
+                        <div class="card bg-glass">
+                            <div class="card-header">
+                                <h3>AI Efficiency</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="ai-metric-grid">
+                                    <div class="ai-metric-item">
+                                        <label>AI Response Rate</label>
+                                        <div class="ai-metric-value" id="ai-response-rate">0%</div>
+                                        <div class="progress-bar"><div id="ai-response-progress" style="width: 0%"></div></div>
+                                    </div>
+                                    <div class="ai-metric-item">
+                                        <label>Human Handoff Rate</label>
+                                        <div class="ai-metric-value" id="handoff-rate">0%</div>
+                                        <div class="progress-bar"><div id="handoff-progress" style="width: 0%; background: var(--accent-orange);"></div></div>
+                                    </div>
+                                    <div class="ai-metric-item">
+                                        <label>AI Accuracy (Est.)</label>
+                                        <div class="ai-metric-value" id="ai-accuracy">0%</div>
+                                        <div class="progress-bar"><div id="ai-accuracy-progress" style="width: 0%; background: var(--accent-purple);"></div></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Leaderboard -->
+                        <div class="card bg-glass" style="grid-column: span 2;">
+                            <div class="card-header">
+                                <h3>Agent Leaderboard</h3>
+                                <p style="font-size: 0.75rem; color: var(--text-muted);">Top performing agents by resolution</p>
+                            </div>
+                            <div class="card-body" style="padding: 0;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Agent</th>
+                                            <th>Team</th>
+                                            <th>Resolutions</th>
+                                            <th>Avg. Time</th>
+                                            <th>Performance</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="analytics-leaderboard-tbody">
+                                        <!-- Loaded via JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Heatmap Placeholder -->
+                        <div class="card bg-glass" style="grid-column: span 2;">
+                            <div class="card-header">
+                                <h3>Peak Activity Heatmap</h3>
+                                <p style="font-size: 0.75rem; color: var(--text-muted);">Busiest hours across the week</p>
+                            </div>
+                            <div class="card-body" style="height: 250px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.02); border-radius: 8px;">
+                                <div style="text-align: center; color: var(--text-muted);">
+                                    <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-bottom: 1rem; opacity: 0.3;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                                    <p>Activity Heatmap Engine Initializing...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Conversations Page -->
+                <section id="page-conversations" class="page">
+
+                    <div class="page-actions">
+                        <input type="text" id="conv-search" placeholder="Search conversations..." onkeyup="debounceConvSearch()" class="search-input">
+                        <div class="filter-group">
+                            <select id="conv-status-filter" onchange="loadConversations()">
+                                <option value="">All Status</option>
+                                <option value="open">Open</option>
+                                <option value="assigned">Assigned</option>
+                                <option value="pending">Pending</option>
+                                <option value="resolved">Resolved</option>
+                                <option value="closed">Closed</option>
+                            </select>
+                            <select id="conv-team-filter" onchange="loadConversations()">
+                                <option value="">All Teams</option>
+                                <option value="sales">Sales</option>
+                                <option value="support">Support</option>
+                                <option value="finance">Finance</option>
+                                <option value="general_pool">General</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-outline" onclick="exportData('conversations')">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            Export CSV
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="conversations-table">
+                            <thead>
+                                <tr>
+                                    <th>Contact</th>
+                                    <th>Status</th>
+                                    <th>Team</th>
+                                    <th>Intent</th>
+                                    <th>Priority</th>
+                                    <th>Messages</th>
+                                    <th>Updated</th>
+                                </tr>
+                            </thead>
+                            <tbody id="conversations-tbody">
+                                <tr><td colspan="7" class="empty-cell">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Chat Side Panel -->
+                    <div id="chat-panel" class="chat-panel hidden">
+                        <div class="chat-panel-header">
+                            <div class="chat-user-info">
+                                <div class="user-avatar" id="chat-avatar">U</div>
+                                <div>
+                                    <h3 id="chat-user-name">User Name</h3>
+                                    <small id="chat-user-phone">+94 77 123 4567</small>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn-icon" onclick="openTransferModal()" title="Transfer Conversation">
+                                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                                </button>
+                                <button class="btn-icon" onclick="closeChatPanel()">
+                                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="chat-messages" id="chat-messages-list">
+                            <!-- Messages will be loaded here -->
+                        </div>
+                        <div class="chat-footer">
+                            <div id="chat-status-bar" style="padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
+                                <span id="chat-status-badge" class="badge">Open</span>
+                                <span id="chat-team-badge" class="badge badge-gray">General</span>
+                            </div>
+                            <div class="chat-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <button class="btn btn-sm btn-outline" id="btn-takeover" onclick="takeoverConversation()">Take Over</button>
+                                <button class="btn btn-sm btn-outline" id="btn-resolve" onclick="resolveConversation()">Resolve</button>
+                            </div>
+                            <form class="chat-input-form" onsubmit="handleChatSubmit(event)" style="display: flex; gap: 0.5rem; flex-direction: column;">
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <input type="text" id="chat-input" placeholder="Type a reply..." autocomplete="off" style="flex: 1; padding: 0.6rem 1rem; border-radius: 50px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary);">
+                                    <button type="submit" class="btn btn-primary" style="border-radius: 50px; padding: 0 1.5rem;">Send</button>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.25rem;">
+                                    <select id="chat-template-select" style="font-size: 0.8rem; padding: 4px 8px; border-radius: 4px; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-muted); flex: 1;" onchange="handleTemplateSelect()">
+                                        <option value="">— Select Template —</option>
+                                    </select>
+                                    <button type="button" class="btn btn-sm btn-outline" onclick="openScheduleModal()" title="Schedule for later">
+                                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline" onclick="sendSelectedTemplate()" style="padding: 4px 10px; font-size: 0.75rem;">Send Template</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Schedule Message Modal (Phase 5) -->
+                <div id="schedule-modal" class="modal hidden">
+                    <div class="modal-content" style="max-width: 400px;">
+                        <div class="modal-header">
+                            <h3>Schedule Message</h3>
+                            <button class="btn-icon" onclick="closeModal('schedule-modal')">
+                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                            </button>
+                        </div>
+                        <div class="modal-body" style="padding: 1.5rem;">
+                            <label style="display: block; font-size: 0.8rem; margin-bottom: 0.5rem; color: var(--text-muted);">Pick Date & Time</label>
+                            <input type="datetime-local" id="schedule-datetime" class="form-input" style="width: 100%; margin-bottom: 1.5rem;">
+                            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                                <button class="btn btn-outline" onclick="closeModal('schedule-modal')">Cancel</button>
+                                <button class="btn btn-primary" onclick="confirmScheduleMessage()">Schedule</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transfer Conversation Modal (Phase 5) -->
+                <div id="transfer-modal" class="modal hidden">
+                    <div class="modal-content" style="max-width: 400px;">
+                        <div class="modal-header">
+                            <h3>Transfer Conversation</h3>
+                            <button class="btn-icon" onclick="closeModal('transfer-modal')">
+                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                            </button>
+                        </div>
+                        <div class="modal-body" style="padding: 1.5rem;">
+                            <label style="display: block; font-size: 0.8rem; margin-bottom: 0.5rem; color: var(--text-muted);">Select Target Team</label>
+                            <select id="transfer-team-select" class="form-input" style="width: 100%; margin-bottom: 1rem;">
+                                <option value="sales">Sales</option>
+                                <option value="support">Support</option>
+                                <option value="finance">Finance</option>
+                                <option value="general">General</option>
+                            </select>
+                            <label style="display: block; font-size: 0.8rem; margin-bottom: 0.5rem; color: var(--text-muted);">Transfer Note (Internal)</label>
+                            <textarea id="transfer-note" class="form-input" rows="3" placeholder="Explain why you're transferring..." style="width: 100%; margin-bottom: 1.5rem;"></textarea>
+                            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                                <button class="btn btn-outline" onclick="closeModal('transfer-modal')">Cancel</button>
+                                <button class="btn btn-primary" onclick="confirmTransfer()">Transfer Now</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contacts Page -->
+                <section id="page-contacts" class="page">
+                    <div class="page-actions">
+                        <input type="text" id="contact-search" placeholder="Search contacts..." onkeyup="debounceSearch()" class="search-input">
+                        <select id="contact-status-filter" onchange="loadContacts()">
+                            <option value="">All</option>
+                            <option value="active">Active</option>
+                            <option value="unsubscribed">Unsubscribed</option>
+                            <option value="blocked">Blocked</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="showAddContactModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            Add Contact
+                        </button>
+                        <button class="btn btn-outline" onclick="exportData('contacts')">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            Export CSV
+                        </button>
+                    </div>
+                    <div id="bulk-actions-bar" class="bulk-actions-bar hidden">
+                        <div class="bulk-info">
+                            <span id="selected-count">0</span> contacts selected
+                        </div>
+                        <div class="bulk-buttons">
+                            <select id="bulk-team-assign" class="btn-sm" style="background: var(--bg-hover); color: white; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px;">
+                                <option value="">Assign to Team...</option>
+                                <option value="sales">Sales</option>
+                                <option value="support">Support</option>
+                                <option value="finance">Finance</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline" onclick="executeBulkAction('export')">Export Selected</button>
+                            <button class="btn btn-sm btn-outline" style="color: var(--accent-red);" onclick="executeBulkAction('delete')">Delete Selected</button>
+                            <button class="btn-icon" onclick="clearBulkSelection()" title="Clear Selection">
+                                <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="contacts-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="select-all-contacts" onclick="toggleSelectAllContacts(this)"></th>
+                                    <th>Name</th>
+                                    <th>Phone</th>
+                                    <th>Status</th>
+                                    <th>Lead Score</th>
+                                    <th>Language</th>
+                                    <th>Last Active</th>
+                                </tr>
+                            </thead>
+                            <tbody id="contacts-tbody">
+                                <tr><td colspan="7" class="empty-cell">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Agents Page -->
+            <section id="page-agents" class="page">
+                <div class="page-header">
+                    <div class="header-left">
+                        <h2>Team Management</h2>
+                        <p>Manage access levels, teams, and active agents</p>
+                    </div>
+                    <div class="header-right">
+                        <button class="btn btn-primary" onclick="showAddAgentModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            Add New Agent
+                        </button>
+                    </div>
+                </div>
+
+                <div class="data-card">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Team</th>
+                                <th>Status</th>
+                                <th>Active Chats</th>
+                                <th>Last Seen</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="agents-table-body">
+                            <!-- Loaded via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Appointments Page -->
+            <section id="page-appointments" class="page">
+                <div class="page-header">
+                    <div class="header-left">
+                        <h2>AI Appointments</h2>
+                        <p>Manage bookings and meetings scheduled by the Autonomous AI Agent</p>
+                    </div>
+                </div>
+                <div class="data-card">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Time</th>
+                                <th>Customer</th>
+                                <th>Phone</th>
+                                <th>Reason</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="appointments-table-body">
+                            <!-- Loaded via JS -->
+                            <tr><td colspan="7" class="text-center">Loading appointments...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Campaigns Page -->
+            <section id="page-campaigns" class="page">
+                <div class="page-header">
+                    <div class="header-left">
+                        <h2>AI Marketing Campaigns</h2>
+                        <p>Launch autonomous AI-driven personalized outreach campaigns</p>
+                    </div>
+                    <div class="header-right">
+                        <button class="btn btn-primary" onclick="showNewCampaignModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            New Campaign
+                        </button>
+                    </div>
+                </div>
+                <div class="campaigns-grid" id="campaigns-list">
+                    <!-- Campaigns will be loaded here -->
+                    <div class="empty-state">No campaigns found. Create your first AI campaign!</div>
+                </div>
+            </section>
+
+            <!-- Knowledge Base Page -->
+            <section id="page-knowledge" class="page">
+                <div class="page-header">
+                    <div class="header-left">
+                        <h2 id="kb-page-title">AI Knowledge Hub</h2>
+                        <p id="kb-page-subtitle">Manage business context and train AI with documents or websites</p>
+                    </div>
+                    <div class="header-right">
+                        <button class="btn btn-primary" onclick="handleSaveKnowledge()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                            <span id="kb-save-btn-text">Save Configuration</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="kb-container">
+                    <!-- Tabs -->
+                    <div class="kb-tabs">
+                        <button class="kb-tab-btn active" onclick="switchKBTab('general')">General Context</button>
+                        <button class="kb-tab-btn" onclick="switchKBTab('documents')">Documents & Training</button>
+                        <button class="kb-tab-btn" onclick="switchKBTab('advanced')">Advanced Rules</button>
+                    </div>
+
+                    <!-- General Context Tab -->
+                    <div id="kb-tab-general" class="kb-tab-content active">
+                        <div class="card">
+                            <div class="card-body">
+                                <div id="kb-json-warning" class="badge badge-orange" style="margin-bottom: 1rem; display:none;">Manual Edit Mode</div>
+                                <div style="height: calc(100vh - 350px);">
+                                    <textarea id="kb-editor" class="code-editor" spellcheck="false" placeholder="Loading knowledge base..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Documents & Training Tab -->
+                    <div id="kb-tab-documents" class="kb-tab-content">
+                        <div class="kb-grid">
+                            <!-- Ingestion Sidebar -->
+                            <div class="kb-ingestion">
+                                <div class="card">
+                                    <div class="card-header"><h3>Add New Knowledge</h3></div>
+                                    <div class="card-body">
+                                        <div class="form-group">
+                                            <label>Method</label>
+                                            <select id="kb-ingest-type" onchange="toggleIngestFields()">
+                                                <option value="text">Manual Text Entry</option>
+                                                <option value="website">Website Scraper</option>
+                                                <option value="file">Document Upload (PDF/TXT)</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div id="kb-field-title" class="form-group">
+                                            <label>Document Title</label>
+                                            <input type="text" id="kb-input-title" placeholder="e.g. Refund Policy 2026" class="form-input">
+                                        </div>
+
+                                        <div id="kb-field-url" class="form-group hidden">
+                                            <label>Website URL</label>
+                                            <input type="text" id="kb-input-url" placeholder="https://yourbusiness.com/about" class="form-input">
+                                        </div>
+
+                                        <div id="kb-field-file" class="form-group hidden">
+                                            <label>Select File (PDF or TXT)</label>
+                                            <input type="file" id="kb-input-file" accept=".pdf,.txt" class="form-input" style="padding: 0.4rem;">
+                                        </div>
+
+                                        <div id="kb-field-content" class="form-group">
+                                            <label>Content</label>
+                                            <textarea id="kb-input-content" rows="8" placeholder="Paste your business details here..." class="form-input"></textarea>
+                                        </div>
+
+                                        <button class="btn btn-primary btn-full" id="btn-train-ai" onclick="handleTrainAI()">
+                                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                            <span>Train AI Brain</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Documents List -->
+                            <div class="kb-list">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3>Trained Documents</h3>
+                                        <button class="btn-icon" onclick="loadKnowledgeDocuments()"><svg width="14" height="14" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg></button>
+                                    </div>
+                                    <div class="table-container" style="max-height: calc(100vh - 350px);">
+                                        <table class="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Title</th>
+                                                    <th>Type</th>
+                                                    <th>Status</th>
+                                                    <th>Chunks</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="kb-docs-tbody">
+                                                <tr><td colspan="5" class="empty-cell">No documents indexed yet.</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Rules Tab -->
+                    <div id="kb-tab-advanced" class="kb-tab-content">
+                        <div class="card">
+                            <div class="card-body">
+                                <p style="color:var(--text-muted); margin-bottom: 1rem;">Configure advanced AI behavior, confidence thresholds, and tone guidelines.</p>
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                                    <div class="card" style="background:var(--bg-input);">
+                                        <div class="card-body">
+                                            <h4>Confidence Thresholds</h4>
+                                            <div class="form-group" style="margin-top:1rem;">
+                                                <label>Auto-Send Threshold (0.0 - 1.0)</label>
+                                                <input type="number" step="0.05" id="kb-conf-auto" class="form-input" value="0.7">
+                                            </div>
+                                            <div class="form-group">
+                                                <label>Human Review Threshold (0.0 - 1.0)</label>
+                                                <input type="number" step="0.05" id="kb-conf-human" class="form-input" value="0.4">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card" style="background:var(--bg-input);">
+                                        <div class="card-body">
+                                            <h4>Tone & Personality</h4>
+                                            <div class="form-group" style="margin-top:1rem;">
+                                                <label>AI Personality Style</label>
+                                                <select id="kb-tone-style" class="form-input">
+                                                    <option value="professional_friendly">Professional & Friendly</option>
+                                                    <option value="formal">Formal & Corporate</option>
+                                                    <option value="enthusiastic">Enthusiastic & Sales-focused</option>
+                                                    <option value="concise">Concise & Direct</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+
+                <!-- Audit Logs Page -->
+                <section id="page-audit" class="page">
+                    <div class="page-actions">
+                        <select id="audit-agent-filter" onchange="loadAuditLogs()">
+                            <option value="">All Agents</option>
+                            <option value="pre_filter">Pre-Filter</option>
+                            <option value="orchestrator">Orchestrator</option>
+                            <option value="compliance">Compliance</option>
+                            <option value="routing">Routing</option>
+                        </select>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Agent</th>
+                                    <th>Action</th>
+                                    <th>Intent</th>
+                                    <th>Confidence</th>
+                                    <th>Flags</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-tbody">
+                                <tr><td colspan="6" class="empty-cell">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Simulator Page -->
+                <section id="page-simulator" class="page">
+                    <div class="simulator-layout">
+                        <div class="sim-phone">
+                            <div class="sim-phone-header">
+                                <div style="display:flex;align-items:center;gap:0.5rem">
+                                    <div class="user-avatar" style="width:28px;height:28px;font-size:0.7rem">P</div>
+                                    <div>
+                                        <div style="font-size:0.85rem;font-weight:600">Pro CRM Bot</div>
+                                        <div style="font-size:0.65rem;color:var(--accent-green)">Online</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="sim-messages" id="sim-messages">
+                                <div class="sim-msg bot">
+                                    <div class="sim-bubble">👋 Welcome! Type a message below to simulate a WhatsApp conversation with the AI pipeline.</div>
+                                    <div class="sim-time">System</div>
+                                </div>
+                            </div>
+                            <form class="sim-input" onsubmit="handleSimulate(event)">
+                                <div style="display:flex;gap:0.5rem;width:100%;align-items:center">
+                                    <input type="text" id="sim-text" placeholder="Type a message..." autocomplete="off" style="flex:1">
+                                    <button type="submit" class="btn btn-primary" id="sim-send-btn">Send</button>
+                                </div>
+                                <div style="margin-top:0.5rem;display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;color:var(--text-muted)">
+                                    <input type="checkbox" id="sim-bypass" style="cursor:pointer">
+                                    <label for="sim-bypass" style="cursor:pointer">Bypass Off-hours/Rate-limits (Dev only)</label>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="sim-results">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3>🔬 Pipeline Analysis</h3>
+                                </div>
+                                <div class="card-body" id="sim-analysis">
+                                    <div class="empty-state"><p>Send a message to see pipeline results</p></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <!-- Settings Page -->
+                <section id="page-settings" class="page">
+                    <div class="page-header">
+                        <div class="header-left">
+                            <h2 id="settings-page-title">System Settings</h2>
+                            <p id="settings-page-subtitle">Configure Meta WhatsApp API, Gemini AI, and system integrations</p>
+                        </div>
+                    </div>
+
+                    <div class="settings-grid">
+                        <!-- White-label Branding -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>White-label Branding</h3>
+                                <div class="badge badge-blue">Pro</div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Company Name</label>
+                                    <input type="text" id="set-company-name" placeholder="Your Company Ltd." class="form-input" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label>Company Logo URL</label>
+                                    <input type="text" id="set-company-logo" placeholder="https://example.com/logo.png" class="form-input" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label>Brand Primary Color</label>
+                                    <div style="display: flex; gap: 10px; align-items: center;">
+                                        <input type="color" id="set-brand-color" value="#25D366" style="width: 50px; height: 38px; padding: 0; border: none; background: transparent; cursor: pointer;">
+                                        <input type="text" id="set-brand-color-text" placeholder="#25D366" class="form-input" style="flex: 1;" oninput="document.getElementById('set-brand-color').value = this.value">
+                                    </div>
+                                </div>
+                                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="saveBranding()">Save Branding</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- WhatsApp Integration -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>WhatsApp (Meta Cloud API)</h3>
+                                <div id="status-whatsapp-integration" class="badge badge-gray">Unknown</div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Phone Number ID</label>
+                                    <input type="text" id="set-wa-phone-id" placeholder="e.g. 1029384756" class="form-input" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label>Access Token (System User)</label>
+                                    <input type="password" id="set-wa-token" placeholder="EAAG..." class="form-input" autocomplete="new-password">
+                                </div>
+                                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="saveSetting('WHATSAPP_PHONE_NUMBER_ID', 'set-wa-phone-id')">Save ID</button>
+                                    <button class="btn btn-primary btn-sm" onclick="saveSetting('WHATSAPP_ACCESS_TOKEN', 'set-wa-token')">Save Token</button>
+                                    <button class="btn btn-outline btn-sm" onclick="testIntegration('whatsapp')">Test Connection</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Webhook Setup -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Auto Webhook Setup</h3>
+                                <div class="badge badge-blue">Beta</div>
+                            </div>
+                            <div class="card-body">
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">
+                                    Automatically register your server URL with Meta instead of doing it manually in the App Dashboard.
+                                </p>
+                                <div class="form-group">
+                                    <label>Meta App ID</label>
+                                    <input type="text" id="set-meta-app-id" placeholder="e.g. 1234567890" class="form-input" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label>Meta App Secret</label>
+                                    <input type="password" id="set-meta-app-secret" placeholder="e.g. abc123def456" class="form-input" autocomplete="new-password">
+                                </div>
+                                <div class="form-group">
+                                    <label>Server Public URL</label>
+                                    <input type="text" id="set-public-url" placeholder="https://your-crm.com" class="form-input" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label>Webhook Verify Token</label>
+                                    <input type="text" id="set-verify-token" placeholder="my_secure_token_123" class="form-input" autocomplete="off">
+                                    <small style="display:block; color:var(--text-muted); margin-top:4px;">You can type any random secret string here.</small>
+                                </div>
+                                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="registerWebhook()">Register with Meta</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AI Integration -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Gemini AI (Google)</h3>
+                                <div id="status-gemini-integration" class="badge badge-gray">Unknown</div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Gemini API Key</label>
+                                    <input type="password" id="set-gemini-key" placeholder="AIza..." class="form-input" autocomplete="new-password">
+                                </div>
+                                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="saveSetting('GEMINI_API_KEY', 'set-gemini-key')">Save API Key</button>
+                                    <button class="btn btn-outline btn-sm" onclick="testIntegration('gemini')">Test Connection</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Data Management -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Data Management & Backups</h3>
+                                <div class="badge badge-purple">Admin</div>
+                            </div>
+                            <div class="card-body">
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">
+                                    Secure your database by creating snapshots. You can create local server-side backups or download them directly.
+                                </p>
+                                <div class="form-actions" style="display: flex; gap: 0.5rem; flex-direction: column;">
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <button class="btn btn-primary btn-sm" onclick="createSystemBackup()" id="btn-create-backup">
+                                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="margin-right:5px;"><path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H2zm0 1h12v12H2V2z"/><path d="M4.5 5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1zM4 7a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0zm.5 3a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/></svg>
+                                            Create Server Backup
+                                        </button>
+                                        <button class="btn btn-outline btn-sm" onclick="downloadDatabase()">
+                                            Download SQLite File
+                                        </button>
+                                    </div>
+                                    
+                                    <div style="margin-top: 1.5rem;">
+                                        <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Recent Backups</label>
+                                        <div id="backup-list" class="empty-state" style="padding: 1rem; font-size: 0.8rem; background: var(--bg-hover); border-radius: 8px;">
+                                            Loading backups...
+                                        </div>
+                                    </div>
+
+                                    <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
+                                        <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:0.5rem;">Restore from Local File</label>
+                                        <div style="display: flex; gap: 0.5rem;">
+                                            <input type="file" id="restore-file-input" accept=".db" class="form-input" style="padding:0.4rem;">
+                                            <button class="btn btn-outline btn-sm" onclick="restoreFromLocalFile()">Restore</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Security -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Security</h3>
+                                <div class="badge badge-orange">Account</div>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Current Password</label>
+                                    <input type="password" id="change-old-password" class="form-input" autocomplete="current-password">
+                                </div>
+                                <div class="form-group">
+                                    <label>New Password</label>
+                                    <input type="password" id="change-new-password" class="form-input" autocomplete="new-password">
+                                </div>
+                                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="handleChangePassword()">Update Password</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+
+    <!-- Add Contact Modal -->
+    <div id="modal-contact" class="modal-overlay hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: var(--bg-card); padding: 2rem; border-radius: 12px; max-width: 450px; width: 100%; border: 1px solid var(--border-color);">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 id="contact-modal-title">Add New Contact</h3>
+                <button class="btn-icon" onclick="closeContactModal()">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                </button>
+            </div>
+            <form id="contact-form" onsubmit="handleSaveContact(event)">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Display Name</label>
+                    <input type="text" id="contact-name" placeholder="Contact Name" required class="form-input" style="width: 100%;">
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Phone Number</label>
+                    <input type="text" id="contact-phone-input" placeholder="+94770000000" required class="form-input" style="width: 100%;">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Email (Optional)</label>
+                    <input type="email" id="contact-email" placeholder="client@example.com" class="form-input" style="width: 100%;">
+                </div>
+                <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 1rem;">
+                    <button type="button" class="btn btn-outline" onclick="closeContactModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="contact-submit-btn">Save Contact</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Agent Modal -->
+    <div id="modal-agent" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3 id="agent-modal-title">Add New Agent</h3>
+                <button class="btn-icon" onclick="closeAgentModal()">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                </button>
+            </div>
+            <form id="agent-form" onsubmit="handleSaveAgent(event)">
+                <div class="form-group">
+                    <label>Display Name</label>
+                    <input type="text" id="agent-name" placeholder="Agent Name" required>
+                </div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="agent-email" placeholder="agent@procrm.com" required>
+                </div>
+                <div id="password-field" class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="agent-password" placeholder="••••••••">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="agent-role">
+                            <option value="agent">Agent</option>
+                            <option value="team_lead">Team Lead</option>
+                            <option value="manager">Manager</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Team</label>
+                        <select id="agent-team">
+                            <option value="general_pool">General</option>
+                            <option value="sales">Sales</option>
+                            <option value="support">Support</option>
+                            <option value="finance">Finance</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="status-field" class="form-group hidden">
+                    <label>Account Status</label>
+                    <select id="agent-status">
+                        <option value="active">Active</option>
+                        <option value="suspended">Suspended</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeAgentModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="agent-submit-btn">Save Agent</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="toast-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;"></div>
+    <!-- Campaign Modal -->
+    <div id="campaign-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New AI Campaign</h3>
+                <button class="btn-icon" onclick="closeModal('campaign-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Campaign Name</label>
+                    <input type="text" id="campaign-name" class="form-input" placeholder="e.g. Summer Sale 2026">
+                </div>
+                <div class="form-group">
+                    <label>Target Segment</label>
+                    <select id="campaign-segment" class="form-input">
+                        <option value="hot_leads">Hot Leads (Score > 80)</option>
+                        <option value="warm_leads">Warm Leads (Score 40-80)</option>
+                        <option value="all_active">All Active Contacts</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Base Message Template</label>
+                    <textarea id="campaign-template" class="form-input" rows="4" placeholder="Hello {{name}}, check out our new arrivals!"></textarea>
+                    <p style="font-size: 0.7rem; color: var(--text-muted); margin-top: 5px;">AI will automatically personalize this for each contact.</p>
+                </div>
+                <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="campaign-ai-enhanced" checked>
+                    <label for="campaign-ai-enhanced" style="margin-bottom: 0;">Enable AI-Powered Personalization</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('campaign-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="handleCreateCampaign()">Create Campaign</button>
+            </div>
+        </div>
+    </div>
+    <!-- Contact Detail Drawer -->
+    <div id="contact-drawer" class="drawer-overlay hidden" onclick="closeContactDrawer(event)">
+        <div class="drawer-content" onclick="event.stopPropagation()">
+            <div class="drawer-header">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div id="drawer-avatar" class="avatar-lg">U</div>
+                    <div>
+                        <h3 id="drawer-name">Contact Name</h3>
+                        <p id="drawer-phone" style="font-size: 0.85rem; color: var(--text-muted);">+94 77 000 0000</p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="btn-icon" id="btn-edit-contact" onclick="editActiveContact()" title="Edit Contact" style="color: var(--accent-blue);">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </button>
+                    <button class="btn-icon" onclick="toggleContactDrawer(false)">
+                        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="drawer-body">
+                <!-- Lead Score & Status -->
+                <div class="drawer-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div class="lead-score-container">
+                            <svg class="score-ring" width="60" height="60">
+                                <circle class="score-ring-bg" cx="30" cy="30" r="26"></circle>
+                                <circle id="score-ring-fill" class="score-ring-fill" cx="30" cy="30" r="26" style="stroke-dasharray: 163; stroke-dashoffset: 163;"></circle>
+                            </svg>
+                            <div class="score-text">
+                                <span id="drawer-score-value">0</span>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <label style="display: block; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Current Status</label>
+                            <span id="drawer-status-badge" class="badge badge-gray">Unknown</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Intelligence Section -->
+                <div class="drawer-section">
+                    <h4 class="section-title">✨ AI Intelligence</h4>
+                    <div id="drawer-ai-summary" class="ai-summary-box">
+                        <div class="skeleton-text"></div>
+                        <div class="skeleton-text" style="width: 80%;"></div>
+                    </div>
+                    <div id="drawer-tags" class="tag-container" style="margin-top: 0.75rem;">
+                        <!-- Tags injected here -->
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="drawer-tabs">
+                    <button class="tab-btn active" onclick="switchDrawerTab('timeline')">Timeline</button>
+                    <button class="tab-btn" onclick="switchDrawerTab('info')">Info</button>
+                    <button class="tab-btn" onclick="switchDrawerTab('notes')">Notes</button>
+                </div>
+
+                <!-- Tab Content -->
+                <div id="drawer-tab-timeline" class="tab-content active">
+                    <div id="drawer-timeline" class="timeline-list">
+                        <!-- Timeline items injected here -->
+                    </div>
+                </div>
+                
+                <div id="drawer-tab-info" class="tab-content">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <label>Email</label>
+                            <p id="drawer-info-email">-</p>
+                        </div>
+                        <div class="info-item">
+                            <label>Location</label>
+                            <p id="drawer-info-location">Sri Lanka</p>
+                        </div>
+                        <div class="info-item">
+                            <label>Language</label>
+                            <p id="drawer-info-lang">Sinhala / English</p>
+                        </div>
+                        <div class="info-item">
+                            <label>Last Seen</label>
+                            <p id="drawer-info-last-seen">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="drawer-tab-notes" class="tab-content">
+                    <textarea id="drawer-notes-input" class="form-input" rows="6" placeholder="Add a private note about this contact..."></textarea>
+                    <button class="btn btn-primary btn-sm" style="margin-top: 0.5rem; width: 100%;" onclick="saveContactNotes()">Save Notes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Command Palette (Phase 4) -->
+    <div id="command-palette" class="palette-overlay hidden" onclick="closePalette(event)">
+        <div class="palette-content" onclick="event.stopPropagation()">
+            <div class="palette-header">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <input type="text" id="palette-search" placeholder="Search contacts, pages, or commands... (Ctrl+K)" autocomplete="off">
+                <span class="palette-kbd">ESC</span>
+            </div>
+            <div id="palette-results" class="palette-results">
+                <!-- Search results will appear here -->
+                <div class="palette-group">
+                    <div class="palette-group-title">Navigation</div>
+                    <div class="palette-item" onclick="handlePaletteAction('go-overview')">
+                        <div class="palette-item-icon">🏠</div>
+                        <div class="palette-item-text">
+                            <span class="palette-item-title">Go to Overview</span>
+                            <span class="palette-item-desc">Jump to your main dashboard</span>
+                        </div>
+                        <span class="palette-item-shortcut">G O</span>
+                    </div>
+                    <div class="palette-item" onclick="handlePaletteAction('go-analytics')">
+                        <div class="palette-item-icon">📈</div>
+                        <div class="palette-item-text">
+                            <span class="palette-item-title">Go to Analytics</span>
+                            <span class="palette-item-desc">View performance and trends</span>
+                        </div>
+                        <span class="palette-item-shortcut">G A</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="dashboard.js"></script>
+</body>
+</html>
+

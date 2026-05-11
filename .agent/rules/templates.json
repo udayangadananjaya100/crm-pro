@@ -1,0 +1,138 @@
+{
+  "$schema": "templates/v2.1.0",
+  "version": "2.1.0",
+  "description": "Pre-approved Meta WhatsApp Business message templates. These are used when outside the 24h conversational window.",
+
+  "templates": {
+    "off_hours_auto_reply": {
+      "name": "off_hours_auto_reply",
+      "category": "UTILITY",
+      "language": {
+        "en": {
+          "header": null,
+          "body": "Hi {{1}}! Thanks for reaching out. Our team is currently offline. Business hours are Mon-Fri 8AM-8PM, Sat 9AM-5PM, Sun 10AM-2PM (Sri Lanka time). We'll get back to you as soon as we're back! 🕐",
+          "footer": "Pro CRM — Always here for you",
+          "buttons": [
+            { "type": "QUICK_REPLY", "text": "OK, I'll wait" },
+            { "type": "QUICK_REPLY", "text": "Urgent — Call me" }
+          ]
+        },
+        "si": {
+          "header": null,
+          "body": "ආයුබෝවන් {{1}}! සම්බන්ධ වීමට ස්තූතියි. අපගේ කණ්ඩායම දැනට offline ය. ව්‍යාපාර වේලාවන්: සඳු-සිකු 8AM-8PM, සෙන 9AM-5PM, ඉරිදා 10AM-2PM. අපි නැවත පැමිණි විට ඔබට පිළිතුරු දෙන්නම්! 🕐",
+          "footer": "Pro CRM — සැමවිටම ඔබ වෙනුවෙන්",
+          "buttons": [
+            { "type": "QUICK_REPLY", "text": "හරි, මම බලාගෙන ඉන්නම්" },
+            { "type": "QUICK_REPLY", "text": "හදිසි — මට call කරන්න" }
+          ]
+        }
+      },
+      "variables": ["customer_name"]
+    },
+
+    "welcome_lead": {
+      "name": "welcome_lead",
+      "category": "MARKETING",
+      "language": {
+        "en": {
+          "header": { "type": "TEXT", "text": "Welcome to Pro CRM! 🎉" },
+          "body": "Hi {{1}}, thanks for connecting with us! We help businesses grow with smart WhatsApp automation.\n\nHere's what we can do for you:\n✅ Automated customer support\n✅ Lead management\n✅ Sales pipeline tracking\n\nReply 'LEARN MORE' to get started!",
+          "footer": "Pro CRM — Smart Business Solutions"
+        },
+        "si": {
+          "header": { "type": "TEXT", "text": "Pro CRM වෙත සාදරයෙන් පිළිගනිමු! 🎉" },
+          "body": "ආයුබෝවන් {{1}}, අප හා සම්බන්ධ වීමට ස්තූතියි! WhatsApp automation හරහා ව්‍යාපාර වර්ධනය කිරීමට අපි උදව් කරනවා.\n\n✅ ස්වයංක්‍රීය පාරිභෝගික සහාය\n✅ Lead management\n✅ Sales pipeline tracking\n\n'තව දැනගන්න' කියලා reply කරන්න!",
+          "footer": "Pro CRM — Smart Business Solutions"
+        }
+      },
+      "variables": ["customer_name"]
+    },
+
+    "follow_up_1": {
+      "name": "follow_up_day1",
+      "category": "MARKETING",
+      "language": {
+        "en": {
+          "body": "Hi {{1}}! 👋 Just checking in. Did you get a chance to explore our features? We'd love to help you get started. Reply 'YES' for a quick walkthrough!",
+          "footer": "Pro CRM"
+        },
+        "si": {
+          "body": "ආයුබෝවන් {{1}}! 👋 ඔබ අපගේ features ගැන බැලුවාද? ආරම්භ කිරීමට උදව් කරන්න අපි කැමතියි. 'ඔව්' කියලා reply කරන්න!",
+          "footer": "Pro CRM"
+        }
+      },
+      "variables": ["customer_name"]
+    },
+
+    "follow_up_2": {
+      "name": "follow_up_day3",
+      "category": "MARKETING",
+      "language": {
+        "en": {
+          "body": "Hi {{1}}, we noticed you haven't connected yet. No worries! Here's a quick summary of how Pro CRM can boost your business:\n\n📈 30% faster response times\n💰 20% more lead conversions\n🤖 AI-powered automation\n\nReady to start? Reply 'DEMO' for a free demo!",
+          "footer": "Pro CRM"
+        }
+      },
+      "variables": ["customer_name"]
+    },
+
+    "opt_out_confirmation": {
+      "name": "opt_out_confirmation",
+      "category": "UTILITY",
+      "language": {
+        "en": {
+          "body": "Hi {{1}}, you've been unsubscribed from Pro CRM messages. You won't receive any further messages. To re-subscribe, simply send 'START' anytime. We're always here when you need us! ✅",
+          "footer": "Pro CRM"
+        },
+        "si": {
+          "body": "ආයුබෝවන් {{1}}, ඔබ Pro CRM පණිවිඩ වලින් ඉවත් වී ඇත. ඔබට තවත් පණිවිඩ ලැබෙන්නේ නැත. නැවත දායක වීමට 'START' යවන්න. ✅",
+          "footer": "Pro CRM"
+        }
+      },
+      "variables": ["customer_name"]
+    },
+
+    "sla_breach_notification": {
+      "name": "sla_breach_apology",
+      "category": "UTILITY",
+      "language": {
+        "en": {
+          "body": "Hi {{1}}, we sincerely apologize for the delay in getting back to you. Your inquiry is important to us, and a team member will reach out shortly. Thank you for your patience! 🙏",
+          "footer": "Pro CRM"
+        },
+        "si": {
+          "body": "ආයුබෝවන් {{1}}, ප්‍රමාදය ගැන අවංකවම සමාවෙන්නෙමු. ඔබේ විමසුම අපට වැදගත්. කණ්ඩායම් සාමාජිකයෙකු ඉක්මනින් ඔබ හා සම්බන්ධ වනු ඇත. 🙏",
+          "footer": "Pro CRM"
+        }
+      },
+      "variables": ["customer_name"]
+    },
+
+    "human_handoff": {
+      "name": "human_handoff_notice",
+      "category": "UTILITY",
+      "language": {
+        "en": {
+          "body": "Hi {{1}}, I'm connecting you with one of our team members who can better assist you. They'll be with you shortly! Please hold on. 🤝",
+          "footer": "Pro CRM"
+        },
+        "si": {
+          "body": "ආයුබෝවන් {{1}}, ඔබට වඩා හොඳින් උදව් කළ හැකි කණ්ඩායම් සාමාජිකයෙකු සමඟ සම්බන්ධ කරනවා. ටිකක් ඉන්න! 🤝",
+          "footer": "Pro CRM"
+        }
+      },
+      "variables": ["customer_name"]
+    }
+  },
+
+  "template_usage_rules": {
+    "require_meta_approval": true,
+    "max_variables_per_template": 5,
+    "variable_max_length": 256,
+    "prohibited_in_templates": ["urls_not_whitelisted", "phone_numbers", "promotional_without_opt_in"],
+    "rate_limits": {
+      "per_template_per_user_per_day": 3,
+      "per_template_total_per_day": 10000
+    }
+  }
+}

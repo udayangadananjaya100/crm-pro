@@ -1,0 +1,191 @@
+{
+  "$schema": "agent-rules/v2.1.0",
+  "version": "2.1.0",
+  "last_updated": "2026-05-08T15:48:00+05:30",
+
+  "ai_config": {
+    "provider": "google_gemini",
+    "model": "gemini-3.1-flash-lite",
+    "fallback_model": "gemini-flash-latest",
+    "temperature": 0.6,
+    "max_tokens_per_reply": 500,
+    "top_p": 0.9,
+    "top_k": 40,
+    "stop_sequences": [],
+    "safety_settings": {
+      "harassment": "BLOCK_MEDIUM_AND_ABOVE",
+      "hate_speech": "BLOCK_MEDIUM_AND_ABOVE",
+      "sexually_explicit": "BLOCK_MEDIUM_AND_ABOVE",
+      "dangerous_content": "BLOCK_MEDIUM_AND_ABOVE"
+    },
+    "system_context": "You are the AI assistant for Pro CRM, a professional WhatsApp-based customer relationship management platform. You assist customers in Sinhala and English. Always be helpful, accurate, and professional. Never fabricate information. If unsure, offer to connect with a human agent.",
+    "retry_config": {
+      "max_retries": 3,
+      "retry_delay_ms": 1000,
+      "backoff_multiplier": 2
+    }
+  },
+
+  "confidence_threshold": {
+    "auto_send": 0.7,
+    "human_review": 0.5,
+    "drop": 0.2,
+    "description": "Responses with confidence >= 0.7 auto-send. Between 0.5-0.7 go to human review. Below 0.5 trigger escalation. Below 0.2 are dropped as noise."
+  },
+
+  "response_limits": {
+    "max_tokens_per_reply": 500,
+    "max_conversation_history": 10,
+    "max_reply_time_ms": 5000,
+    "max_retries_before_escalation": 2,
+    "cooldown_between_replies_ms": 500
+  },
+
+  "language_config": {
+    "supported_languages": ["si", "en"],
+    "default_language": "en",
+    "auto_detect": true,
+    "mixed_language_support": true,
+    "sinhala_keywords": {
+      "greeting": ["ආයුබෝවන්", "හෙලෝ", "කොහොමද"],
+      "thanks": ["ස්තූතියි", "බොහොම ස්තූතියි", "ඔබට ස්තුතියි"],
+      "help": ["උදව්", "සහාය", "help කරන්න"],
+      "pricing": ["මිල", "ගාස්තු", "මුදල"],
+      "complaint": ["පැමිණිලි", "ප්‍රශ්නයක්", "ගැටළුවක්"]
+    }
+  },
+
+  "tone_guidelines": {
+    "style": "professional_friendly",
+    "formality": "semi_formal",
+    "emoji_usage": "minimal",
+    "max_emojis_per_message": 2,
+    "prohibited_tones": ["aggressive", "sarcastic", "overly_casual", "political", "religious"],
+    "cultural_sensitivity": {
+      "region": "LK",
+      "notes": [
+        "Use respectful Sinhala honorifics when appropriate (ඔබ, මහත්මයා/මහත්මිය)",
+        "Avoid informal slang in first contact",
+        "Be sensitive to local holidays and customs",
+        "Use LKR (Rs.) for all pricing references"
+      ]
+    }
+  },
+
+  "sla_config": {
+    "first_response_time": {
+      "target_seconds": 30,
+      "warning_seconds": 20,
+      "breach_seconds": 60
+    },
+    "resolution_time": {
+      "sales": { "target_minutes": 30, "breach_minutes": 60 },
+      "support": { "target_minutes": 60, "breach_minutes": 120 },
+      "billing": { "target_minutes": 45, "breach_minutes": 90 },
+      "general": { "target_minutes": 120, "breach_minutes": 240 }
+    },
+    "breach_actions": {
+      "first_breach": "flag_and_notify_agent",
+      "second_breach": "escalate_to_team_lead",
+      "third_breach": "escalate_to_manager"
+    }
+  },
+
+  "escalation": {
+    "enabled": true,
+    "triggers": [
+      { "condition": "confidence_below_threshold", "action": "human_queue", "priority": "medium" },
+      { "condition": "compliance_violation", "action": "block_and_review", "priority": "high" },
+      { "condition": "sla_breach", "action": "escalate_team_lead", "priority": "high" },
+      { "condition": "repeated_ai_failure", "threshold": 2, "action": "escalate_manager", "priority": "critical" },
+      { "condition": "customer_anger_detected", "action": "human_queue_urgent", "priority": "high" },
+      { "condition": "payment_dispute", "action": "finance_team", "priority": "high" },
+      { "condition": "data_breach_suspected", "action": "halt_and_alert", "priority": "critical" }
+    ],
+    "notification_channels": ["slack", "email", "in_app"],
+    "manager_escalation_after_failures": 2
+  },
+
+  "routing": {
+    "default_team": "general_pool",
+    "teams": {
+      "sales": {
+        "intents": ["sales", "pricing", "demo_request", "product_inquiry"],
+        "capacity": 10,
+        "priority_weight": 1.2
+      },
+      "support": {
+        "intents": ["support", "complaint", "bug_report", "how_to"],
+        "capacity": 8,
+        "priority_weight": 1.5
+      },
+      "finance": {
+        "intents": ["billing", "payment", "refund", "invoice"],
+        "capacity": 5,
+        "priority_weight": 1.3
+      },
+      "general_pool": {
+        "intents": ["general", "unknown", "greeting", "feedback"],
+        "capacity": 15,
+        "priority_weight": 1.0
+      }
+    },
+    "load_balancing": "round_robin",
+    "vip_customers": {
+      "enabled": true,
+      "priority_boost": 2.0,
+      "dedicated_agent": false
+    },
+    "queue_config": {
+      "max_queue_size": 100,
+      "queue_timeout_minutes": 30,
+      "overflow_action": "notify_manager"
+    }
+  },
+
+  "conversation_management": {
+    "auto_close_after_hours": 48,
+    "follow_up_reminder_hours": 24,
+    "max_open_conversations_per_agent": 20,
+    "tagging": {
+      "auto_tag": true,
+      "suggested_tags": ["hot_lead", "vip", "complaint", "urgent", "follow_up", "resolved"]
+    },
+    "notes": {
+      "enabled": true,
+      "max_length": 1000
+    }
+  },
+
+  "lead_capture": {
+    "enabled": true,
+    "auto_capture_new_contacts": true,
+    "required_fields": ["phone_number"],
+    "optional_fields": ["name", "email", "company", "source"],
+    "lead_scoring": {
+      "enabled": true,
+      "factors": [
+        { "factor": "message_count", "weight": 0.2 },
+        { "factor": "intent_match", "weight": 0.3 },
+        { "factor": "response_engagement", "weight": 0.2 },
+        { "factor": "product_interest", "weight": 0.3 }
+      ]
+    },
+    "nurture_sequence": {
+      "enabled": true,
+      "delay_hours": [1, 24, 72, 168],
+      "templates": ["welcome_lead", "follow_up_1", "follow_up_2", "final_offer"]
+    }
+  },
+
+  "greeting_flows": {
+    "first_contact": {
+      "en": "👋 Welcome to Pro CRM! How can we help you today? Reply with:\n1️⃣ Sales & Pricing\n2️⃣ Support\n3️⃣ Billing\n4️⃣ Other",
+      "si": "👋 Pro CRM වෙත සාදරයෙන් පිළිගනිමු! අපට ඔබට කෙසේ උදව් කළ හැකිද? පිළිතුරු දෙන්න:\n1️⃣ විකුණුම් සහ මිල ගණන්\n2️⃣ සහාය\n3️⃣ බිල්පත්\n4️⃣ වෙනත්"
+    },
+    "returning_contact": {
+      "en": "Welcome back, {name}! 😊 How can we assist you today?",
+      "si": "නැවත සාදරයෙන් පිළිගනිමු, {name}! 😊 අද ඔබට කෙසේ උදව් කළ හැකිද?"
+    }
+  }
+}
