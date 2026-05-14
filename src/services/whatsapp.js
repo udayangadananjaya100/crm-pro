@@ -245,7 +245,7 @@ function parseWebhookPayload(body) {
  * @returns {Promise<Buffer>}
  */
 async function downloadMedia(mediaId) {
-  const token = await getSetting('WHATSAPP_ACCESS_TOKEN');
+  const token = await getSetting('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_ACCESS_TOKEN');
   if (!token) throw new Error('WhatsApp Access Token not configured');
 
   try {

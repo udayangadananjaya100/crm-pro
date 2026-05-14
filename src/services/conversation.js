@@ -102,21 +102,22 @@ async function storeInboundMessage(conversationId, contactId, messageData) {
  * Store an outbound message (AI response or human reply)
  */
 async function storeOutboundMessage(conversationId, contactId, {
-  content, intent, confidence, aiGenerated = true, templateName = null,
+  content, intent, confidence, aiGenerated = true, templateName = null, whatsappMessageId = null,
 }) {
   const maskedContent = maskPII(content || '');
 
   return await transaction(async (client) => {
     const result = await client.query(
       `INSERT INTO messages (
-        conversation_id, contact_id, direction, message_type,
+        conversation_id, contact_id, whatsapp_message_id, direction, message_type,
         content, content_masked, status, intent, confidence,
         ai_generated, template_name, pii_detected
-      ) VALUES ($1, $2, 'outbound', $3, $4, $5, 'sent', $6, $7, $8, $9, $10)
+      ) VALUES ($1, $2, $3, 'outbound', $4, $5, $6, 'sent', $7, $8, $9, $10, $11)
       RETURNING *`,
       [
         conversationId,
         contactId,
+        whatsappMessageId,
         templateName ? 'template' : 'text',
         content,
         maskedContent,
@@ -155,6 +156,19 @@ async function getConversationHistory(conversationId, limit = 10) {
   );
 
   return result.rows.reverse(); // Chronological order
+}
+
+async function getMessages(conversationId, limit = 100) {
+  const result = await query(
+    `SELECT *
+     FROM messages
+     WHERE conversation_id = $1
+     ORDER BY created_at ASC
+     LIMIT $2`,
+    [conversationId, limit]
+  );
+
+  return result.rows;
 }
 
 /**
@@ -242,7 +256,7 @@ async function closeConversation(conversationId, notes = '') {
 /**
  * List conversations with filters
  */
-async function listConversations({ page = 1, limit = 20, status, team, priority, search }) {
+async function listConversations({ page = 1, limit = 20, status, team, priority, search, contactId }) {
   const offset = (page - 1) * limit;
   let conditions = [];
   let params = [];
@@ -259,6 +273,10 @@ async function listConversations({ page = 1, limit = 20, status, team, priority,
   if (priority) {
     conditions.push(`c.priority = $${paramIndex++}`);
     params.push(priority);
+  }
+  if (contactId) {
+    conditions.push(`c.contact_id = $${paramIndex++}`);
+    params.push(contactId);
   }
   if (search) {
     conditions.push(`(ct.display_name ILIKE $${paramIndex} OR c.intent ILIKE $${paramIndex})`);
@@ -305,8 +323,10 @@ async function transferConversation(conversationId, team, note, agentId) {
 
     // 2. Add an internal system message/note about the transfer
     await client.query(
-      `INSERT INTO messages (conversation_id, direction, message_type, content, status, ai_generated)
-       VALUES ($1, 'internal', 'transfer', $2, 'received', false)`,
+      `INSERT INTO messages (conversation_id, contact_id, direction, message_type, content, status, ai_generated)
+       SELECT id, contact_id, 'internal', 'transfer', $2, 'received', false
+       FROM conversations
+       WHERE id = $1`,
       [conversationId, `Handover to ${team}: ${note || 'No notes provided.'}`]
     );
 
@@ -320,6 +340,7 @@ module.exports = {
   storeInboundMessage,
   storeOutboundMessage,
   getConversationHistory,
+  getMessages,
   isWithinWindow,
   assignConversation,
   markFirstResponse,

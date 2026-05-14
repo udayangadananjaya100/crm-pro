@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     source VARCHAR(50) DEFAULT 'whatsapp',
     lead_score INTEGER DEFAULT 0,
     tags TEXT[] DEFAULT '{}',
+    notes TEXT,
     opt_in_marketing BOOLEAN DEFAULT false,
     opt_in_analytics BOOLEAN DEFAULT false,
     language_preference VARCHAR(5) DEFAULT 'en',
@@ -55,6 +56,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     resolved_at TIMESTAMPTZ,
     sla_breached BOOLEAN DEFAULT false,
     message_count INTEGER DEFAULT 0,
+    csat_score INTEGER,
+    csat_comment TEXT,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -71,11 +74,11 @@ CREATE INDEX idx_conversations_window ON conversations(window_expires_at);
 CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
     whatsapp_message_id VARCHAR(255),
-    direction VARCHAR(10) NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+    direction VARCHAR(10) NOT NULL CHECK (direction IN ('inbound', 'outbound', 'internal')),
     message_type VARCHAR(20) NOT NULL DEFAULT 'text'
-        CHECK (message_type IN ('text', 'image', 'document', 'audio', 'video', 'sticker', 'template', 'interactive', 'reaction')),
+        CHECK (message_type IN ('text', 'image', 'document', 'audio', 'video', 'sticker', 'template', 'interactive', 'reaction', 'transfer', 'note')),
     content TEXT,
     content_masked TEXT,
     media_url TEXT,
@@ -88,6 +91,9 @@ CREATE TABLE IF NOT EXISTS messages (
     confidence DECIMAL(3,2),
     ai_generated BOOLEAN DEFAULT false,
     pii_detected BOOLEAN DEFAULT false,
+    transcription TEXT,
+    feedback_score INTEGER,
+    feedback_note TEXT,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -109,7 +115,7 @@ CREATE TABLE IF NOT EXISTS agents (
         CHECK (role IN ('admin', 'manager', 'team_lead', 'agent')),
     team VARCHAR(50) DEFAULT 'general_pool',
     status VARCHAR(20) DEFAULT 'active'
-        CHECK (status IN ('active', 'inactive', 'away', 'busy')),
+        CHECK (status IN ('active', 'inactive', 'away', 'busy', 'suspended')),
     max_conversations INTEGER DEFAULT 20,
     active_conversations INTEGER DEFAULT 0,
     avatar_url TEXT,

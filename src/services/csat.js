@@ -23,9 +23,14 @@ async function sendCSATSurvey(conversationId, contactId, phone) {
 
 async function recordCSAT(conversationId, score, comment = '') {
   try {
+    const numericScore = Number(score);
+    if (!Number.isInteger(numericScore) || numericScore < 1 || numericScore > 5) {
+      throw new Error('CSAT score must be an integer from 1 to 5');
+    }
+
     await query(
       "UPDATE conversations SET csat_score = $1, csat_comment = $2 WHERE id = $3",
-      [score, comment, conversationId]
+      [numericScore, comment, conversationId]
     );
     logger.info('CSAT recorded', { conversationId, score });
     return true;

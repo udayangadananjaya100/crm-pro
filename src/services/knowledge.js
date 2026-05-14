@@ -74,7 +74,8 @@ async function addDocument({ title, content, type = 'manual_entry', sourceUrl = 
   // 1. Create document record
   const docResult = await db.query(
     `INSERT INTO knowledge_documents (title, doc_type, source_url, status, metadata)
-     VALUES ($1, $2, $3, $4, $5)`,
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id`,
     [title, type, sourceUrl, 'processing', JSON.stringify(metadata)]
   );
   

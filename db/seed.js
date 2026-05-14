@@ -26,6 +26,26 @@ async function seed() {
     );
     logger.info('✅ Admin agent created (admin@procrm.com / admin123)');
 
+    const seedSettings = [
+      ['setup_completed', JSON.stringify('true'), 'system', 'Demo seed has completed first-run setup', false],
+      ['company_name', JSON.stringify('Pro CRM'), 'branding', 'Company name', true],
+    ];
+
+    for (const setting of seedSettings) {
+      await query(
+        `INSERT INTO settings (key, value, category, description, is_public, updated_at)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+         ON CONFLICT (key) DO UPDATE
+         SET value = EXCLUDED.value,
+             category = EXCLUDED.category,
+             description = EXCLUDED.description,
+             is_public = EXCLUDED.is_public,
+             updated_at = CURRENT_TIMESTAMP`,
+        setting
+      );
+    }
+    logger.info('✅ Demo settings initialized');
+
     // ─────────────────────────────────
     // 2. Create Team Lead Agents
     // ─────────────────────────────────

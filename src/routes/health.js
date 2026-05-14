@@ -19,7 +19,9 @@ router.get('/', async (req, res) => {
       ? 'healthy'
       : 'degraded';
 
-  const statusCode = overall === 'healthy' ? 200 : 503;
+  // Keep liveness/readiness usable during first-run setup when external
+  // integrations are intentionally unconfigured.
+  const statusCode = dbHealth.status === 'healthy' ? 200 : 503;
 
   res.status(statusCode).json({
     status: overall,

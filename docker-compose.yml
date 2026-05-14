@@ -13,7 +13,9 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - REDIS_URL=redis://procrm_redis:6379
-      - JWT_SECRET=changeme_production_secret_key
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - ADMIN_DASHBOARD_URL=${ADMIN_DASHBOARD_URL:-http://localhost:3000}
+      - META_APP_SECRET=${META_APP_SECRET:-}
     volumes:
       - procrm_data:/app/data
       - procrm_logs:/app/logs

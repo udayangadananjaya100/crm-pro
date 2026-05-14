@@ -3,6 +3,7 @@
  * Handles Meta Cloud API webhook verification and incoming messages
  */
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const env = require('../config/environment');
 const { parseWebhookPayload, markAsRead } = require('../services/whatsapp');
@@ -37,6 +38,11 @@ router.get('/', async (req, res) => {
  * Incoming messages from Meta Cloud API
  */
 router.post('/', async (req, res) => {
+  if (!(await verifyMetaSignature(req))) {
+    logger.warn('Webhook signature verification failed');
+    return res.sendStatus(403);
+  }
+
   // Always respond 200 quickly to Meta (they retry on non-200)
   res.sendStatus(200);
 
@@ -97,5 +103,25 @@ router.post('/', async (req, res) => {
     logger.error('Webhook processing error', { error: err.message });
   }
 });
+
+async function verifyMetaSignature(req) {
+  const { getSetting } = require('../utils/settings');
+  const appSecret = await getSetting('META_APP_SECRET', 'META_APP_SECRET');
+  if (!appSecret) return true;
+
+  const signature = req.headers['x-hub-signature-256'];
+  if (!signature || !signature.startsWith('sha256=')) return false;
+
+  const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+  const expected = `sha256=${crypto
+    .createHmac('sha256', appSecret)
+    .update(rawBody)
+    .digest('hex')}`;
+
+  const providedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  return providedBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+}
 
 module.exports = router;

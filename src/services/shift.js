@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const logger = require('../utils/logger');
 
 async function startShift(agentId, notes = '') {
+  const active = await getActiveShift(agentId);
+  if (active) return active;
+
   const id = crypto.randomUUID();
   await query(
     'INSERT INTO shift_logs (id, agent_id, start_time, notes) VALUES ($1, $2, NOW(), $3)',
@@ -18,7 +21,7 @@ async function startShift(agentId, notes = '') {
 
 async function endShift(agentId) {
   const result = await query(
-    'UPDATE shift_logs SET end_time = NOW(), status = "completed" WHERE agent_id = $1 AND status = "active" RETURNING *',
+    "UPDATE shift_logs SET end_time = NOW(), status = 'completed' WHERE agent_id = $1 AND status = 'active' RETURNING *",
     [agentId]
   );
   
@@ -33,10 +36,10 @@ async function endShift(agentId) {
 
 async function getActiveShift(agentId) {
   const result = await query(
-    'SELECT * FROM shift_logs WHERE agent_id = $1 AND status = "active" ORDER BY start_time DESC LIMIT 1',
+    "SELECT * FROM shift_logs WHERE agent_id = $1 AND status = 'active' ORDER BY start_time DESC LIMIT 1",
     [agentId]
   );
-  return result.rows[0];
+  return result.rows[0] || null;
 }
 
 module.exports = {

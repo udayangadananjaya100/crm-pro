@@ -321,10 +321,18 @@ function showDashboard() {
 }
 
 // ─── API HELPER ───
-async function apiCall(endpoint, options = {}) {
+async function apiCall(endpoint, options = {}, legacyBody = undefined) {
+  if (typeof options === 'string') {
+    options = {
+      method: options,
+      body: legacyBody !== undefined ? JSON.stringify(legacyBody) : undefined,
+    };
+  }
+
   const headers = {
-    'Content-Type': 'application/json',
     ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(options.headers || {}),
   };
 
   try {
@@ -333,7 +341,10 @@ async function apiCall(endpoint, options = {}) {
       handleLogout();
       return null;
     }
-    return await res.json();
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok) return { error: data.error || `Request failed (${res.status})`, ...data };
+    return data;
   } catch (err) {
     console.error('API error:', err);
     return null;
@@ -492,10 +503,11 @@ function renderNotifications() {
   }
 
   list.innerHTML = notifications.slice(0, 20).map(n => {
+    const type = String(n.type || 'system');
     const iconMap = { message_in: '💬', message_out: '📤', sla_breach: '⚠️', system: '🔔' };
-    const iconClass = n.type.includes('message') ? 'message' : n.type === 'sla_breach' ? 'sla' : 'system';
+    const iconClass = type.includes('message') ? 'message' : type === 'sla_breach' ? 'sla' : 'system';
     return `
-      <div class="notif-item ${n.read ? '' : 'unread'}" onclick="handleNotifClick('${n.id}')">
+      <div class="notif-item ${n.read ? '' : 'unread'}" onclick="handleNotifClick('${escapeInlineJs(n.id)}')">
         <div class="notif-icon ${iconClass}">${iconMap[n.type] || '🔔'}</div>
         <div class="notif-text">
           <p>${escapeHtml(n.message)}</p>
@@ -562,7 +574,7 @@ function showToast(message, type = 'info') {
 
   const iconMap = { success: '✅', error: '❌', info: '💬', warning: '⚠️' };
   const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
+  toast.className = `toast ${classToken(type, 'info')}`;
   toast.innerHTML = `
     <span class="toast-icon">${iconMap[type] || 'ℹ️'}</span>
     <span>${escapeHtml(message)}</span>
@@ -578,8 +590,43 @@ function showToast(message, type = 'info') {
 
 function escapeHtml(text) {
   const div = document.createElement('div');
-  div.textContent = text;
+  div.textContent = text ?? '';
   return div.innerHTML;
+}
+
+function escapeAttr(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeJsString(text) {
+  return String(text ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+    .replace(/</g, '\\x3C')
+    .replace(/>/g, '\\x3E');
+}
+
+function escapeInlineJs(text) {
+  return escapeAttr(escapeJsString(text));
+}
+
+function clampPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(100, num));
+}
+
+function classToken(value, fallback = 'unknown') {
+  return String(value || fallback).toLowerCase().replace(/[^a-z0-9_-]/g, '') || fallback;
 }
 
 // ─── NAVIGATION ───
@@ -718,18 +765,20 @@ async function loadDashboardStats() {
       if (data.top_leads.length === 0) {
         container.innerHTML = '<div style="color:var(--text-muted); padding:0.5rem; font-size:0.8rem;">No high-value leads yet.</div>';
       } else {
-        container.innerHTML = data.top_leads.map(lead => `
+        container.innerHTML = data.top_leads.map(lead => {
+          const score = clampPercent(lead.lead_score);
+          return `
           <div style="background: var(--bg-hover); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 4px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-weight:700; font-size:0.8rem; color: var(--text-primary);">${lead.display_name}</span>
-              <span class="badge ${lead.lead_score >= 80 ? 'badge-red' : 'badge-orange'}" style="font-size:0.6rem; padding: 1px 6px;">${lead.lead_score} pts</span>
+              <span style="font-weight:700; font-size:0.8rem; color: var(--text-primary);">${escapeHtml(lead.display_name || 'Unknown')}</span>
+              <span class="badge ${score >= 80 ? 'badge-red' : 'badge-orange'}" style="font-size:0.6rem; padding: 1px 6px;">${score} pts</span>
             </div>
-            <div style="font-size:0.7rem; color:var(--text-muted);">${lead.phone}</div>
+            <div style="font-size:0.7rem; color:var(--text-muted);">${escapeHtml(lead.phone_number || lead.phone || '')}</div>
             <div style="margin-top:0.4rem; height:4px; background:var(--bg-card); border-radius:2px; overflow:hidden;">
-              <div style="width:${lead.lead_score}%; height:100%; background:var(--accent-purple); transition: width 1s;"></div>
+              <div style="width:${score}%; height:100%; background:var(--accent-purple); transition: width 1s;"></div>
             </div>
           </div>
-        `).join('');
+        `;}).join('');
       }
     }
   }
@@ -885,8 +934,9 @@ async function loadAnalyticsAIMetrics() {
   const updateMetric = (id, value, progressId) => {
     const el = document.getElementById(id);
     const prog = document.getElementById(progressId);
-    if (el) el.textContent = `${value}%`;
-    if (prog) prog.style.width = `${value}%`;
+    const percent = clampPercent(value);
+    if (el) el.textContent = `${percent}%`;
+    if (prog) prog.style.width = `${percent}%`;
   };
 
   updateMetric('ai-response-rate', data.ai_response_rate, 'ai-response-progress');
@@ -899,24 +949,26 @@ async function loadAnalyticsLeaderboard() {
   const tbody = document.getElementById('analytics-leaderboard-tbody');
   if (!tbody || !data) return;
 
-  tbody.innerHTML = data.map(agent => `
+  tbody.innerHTML = data.map(agent => {
+    const resolutions = Number(agent.resolutions) || 0;
+    return `
     <tr>
       <td>
         <div style="display:flex; align-items:center; gap:8px;">
-          <div class="avatar-sm" style="width:24px; height:24px; font-size:0.6rem;">${(agent.display_name || 'A')[0]}</div>
-          <span style="font-weight:600;">${agent.display_name}</span>
+          <div class="avatar-sm" style="width:24px; height:24px; font-size:0.6rem;">${escapeHtml((agent.display_name || 'A')[0])}</div>
+          <span style="font-weight:600;">${escapeHtml(agent.display_name || 'Unknown')}</span>
         </div>
       </td>
-      <td><span class="badge badge-gray">${agent.team || 'General'}</span></td>
-      <td style="font-weight:700;">${agent.resolutions}</td>
-      <td style="color:var(--text-muted);">${agent.avg_resolution_time_mins || 0}m</td>
+      <td><span class="badge badge-gray">${escapeHtml(agent.team || 'General')}</span></td>
+      <td style="font-weight:700;">${resolutions}</td>
+      <td style="color:var(--text-muted);">${Number(agent.avg_resolution_time_mins) || 0}m</td>
       <td>
         <div class="performance-bar">
-          <div class="performance-fill" style="width: ${Math.min(100, (agent.resolutions / 50) * 100)}%"></div>
+          <div class="performance-fill" style="width: ${clampPercent((resolutions / 50) * 100)}%"></div>
         </div>
       </td>
     </tr>
-  `).join('');
+  `;}).join('');
 }
 
 function setAnalyticsRange(days, btn) {
@@ -950,16 +1002,16 @@ async function loadRecentConversations() {
   }
 
   container.innerHTML = data.conversations.map(c => `
-    <div class="health-item clickable-row" style="padding: 0.75rem 1.25rem;" onclick="navigateTo('conversations'); setTimeout(() => openChat('${c.id}'), 100)">
+    <div class="health-item clickable-row" style="padding: 0.75rem 1.25rem;" onclick="navigateTo('conversations'); setTimeout(() => openChat('${escapeInlineJs(c.id)}'), 100)">
       <div style="display:flex;align-items:center;gap:10px">
-        <div class="user-avatar" style="width:30px;height:30px;font-size:0.75rem">${(c.contact_name || 'U')[0].toUpperCase()}</div>
+        <div class="user-avatar" style="width:30px;height:30px;font-size:0.75rem">${escapeHtml((c.contact_name || 'U')[0].toUpperCase())}</div>
         <div style="display:flex;flex-direction:column">
-          <span style="font-weight:600;font-size:0.85rem">${c.contact_name || 'Unknown'}</span>
-          <span style="font-size:0.75rem;color:var(--text-muted)">${c.intent ? `Intent: ${c.intent}` : 'New Message'}</span>
+          <span style="font-weight:600;font-size:0.85rem">${escapeHtml(c.contact_name || 'Unknown')}</span>
+          <span style="font-size:0.75rem;color:var(--text-muted)">${c.intent ? `Intent: ${escapeHtml(c.intent)}` : 'New Message'}</span>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end">
-        <span class="badge ${priorityBadgeClass(c.priority)}" style="font-size:0.6rem">${c.priority}</span>
+        <span class="badge ${priorityBadgeClass(c.priority)}" style="font-size:0.6rem">${escapeHtml(c.priority || 'normal')}</span>
         <span style="font-size:0.7rem;color:var(--text-muted);margin-top:2px">${timeAgo(c.updated_at)}</span>
       </div>
     </div>
@@ -979,8 +1031,8 @@ async function loadRecentActivity() {
   container.innerHTML = data.logs.map(log => `
     <div class="health-item" style="padding: 0.75rem 1.25rem;">
       <div style="display:flex;flex-direction:column;gap:2px">
-        <span style="font-weight:600;font-size:0.85rem">${(log.action || '').replace(/_/g, ' ').toUpperCase()}</span>
-        <span style="font-size:0.75rem;color:var(--text-muted)">${log.agent_type || 'System'} | ${log.intent || 'No Intent'}</span>
+        <span style="font-weight:600;font-size:0.85rem">${escapeHtml((log.action || '').replace(/_/g, ' ').toUpperCase())}</span>
+        <span style="font-size:0.75rem;color:var(--text-muted)">${escapeHtml(log.agent_type || 'System')} | ${escapeHtml(log.intent || 'No Intent')}</span>
       </div>
       <span style="font-size:0.7rem;color:var(--text-muted)">${timeAgo(log.created_at)}</span>
     </div>
@@ -1094,25 +1146,29 @@ async function loadConversations() {
     return;
   }
 
-  tbody.innerHTML = data.conversations.map((c) => `
+  tbody.innerHTML = data.conversations.map((c) => {
+    const conversationId = escapeInlineJs(c.id);
+    const contactId = escapeInlineJs(c.contact_id);
+    const priority = classToken(c.priority, 'normal');
+    return `
     <tr class="clickable-row ${activeConversationId === c.id ? 'active-row' : ''}">
-      <td onclick="openChat('${c.id}')">
+      <td onclick="openChat('${conversationId}')">
         <div class="contact-info">
-          <div class="avatar-sm" onclick="event.stopPropagation(); openContactDetails('${c.contact_id}')" title="View Contact Details">${escapeHtml((c.contact_name || 'U')[0].toUpperCase())}</div>
+          <div class="avatar-sm" onclick="event.stopPropagation(); openContactDetails('${contactId}')" title="View Contact Details">${escapeHtml((c.contact_name || 'U')[0].toUpperCase())}</div>
           <div>
             <div>${escapeHtml(c.contact_name || 'Unknown')}</div>
             <small>${escapeHtml(c.phone_number_masked || 'No phone')}</small>
           </div>
         </div>
       </td>
-      <td onclick="openChat('${c.id}')"><span class="badge badge-${getStatusColor(c.status)}">${escapeHtml(c.status)}</span></td>
-      <td onclick="openChat('${c.id}')"><span class="badge badge-gray">${escapeHtml(c.assigned_team || '—')}</span></td>
-      <td onclick="openChat('${c.id}')">${escapeHtml(c.intent || '-')}</td>
-      <td onclick="openChat('${c.id}')"><span class="priority-dot priority-${c.priority}"></span> ${escapeHtml(c.priority)}</td>
-      <td onclick="openChat('${c.id}')">${c.message_count || 0}</td>
-      <td onclick="openChat('${c.id}')">${formatDate(c.updated_at)}</td>
+      <td onclick="openChat('${conversationId}')"><span class="badge badge-${getStatusColor(c.status)}">${escapeHtml(c.status)}</span></td>
+      <td onclick="openChat('${conversationId}')"><span class="badge badge-gray">${escapeHtml(c.assigned_team || '-')}</span></td>
+      <td onclick="openChat('${conversationId}')">${escapeHtml(c.intent || '-')}</td>
+      <td onclick="openChat('${conversationId}')"><span class="priority-dot priority-${priority}"></span> ${escapeHtml(c.priority || 'normal')}</td>
+      <td onclick="openChat('${conversationId}')">${Number(c.message_count) || 0}</td>
+      <td onclick="openChat('${conversationId}')">${formatDate(c.updated_at)}</td>
     </tr>
-  `).join('');
+  `;}).join('');
 }
 
 function getStatusColor(status) {
@@ -1166,8 +1222,8 @@ async function loadChatMessages(id) {
   }
 
   list.innerHTML = data.messages.map(msg => `
-    <div class="msg-bubble msg-${msg.direction} ${msg.ai_generated ? 'msg-ai' : ''}">
-      <div class="msg-content">${msg.content}</div>
+    <div class="msg-bubble msg-${classToken(msg.direction, 'inbound')} ${msg.ai_generated ? 'msg-ai' : ''}">
+      <div class="msg-content">${escapeHtml(msg.content || '')}</div>
       <div class="msg-meta">
         ${msg.ai_generated ? '<span class="msg-ai-tag">AI</span>' : ''}
         ${formatTime(msg.created_at)}
@@ -1247,34 +1303,38 @@ async function loadContacts() {
     return;
   }
 
-  tbody.innerHTML = data.contacts.map((c) => `
+  tbody.innerHTML = data.contacts.map((c) => {
+    const contactId = escapeInlineJs(c.id);
+    const leadScore = clampPercent(c.lead_score);
+    return `
     <tr class="clickable-row">
       <td onclick="event.stopPropagation()">
-        <input type="checkbox" class="contact-checkbox" value="${c.id}" onchange="updateBulkSelection()">
+        <input type="checkbox" class="contact-checkbox" value="${escapeAttr(c.id)}" onchange="updateBulkSelection()">
       </td>
-      <td onclick="openContactDetails('${c.id}')">
+      <td onclick="openContactDetails('${contactId}')">
         <div style="display:flex; align-items:center; gap:10px;">
           <div class="avatar-sm">${escapeHtml((c.display_name || 'U')[0].toUpperCase())}</div>
           <strong>${escapeHtml(c.display_name || 'Unknown')}</strong>
         </div>
       </td>
-      <td onclick="openContactDetails('${c.id}')">${escapeHtml(c.phone_number_masked || '—')}</td>
-      <td onclick="openContactDetails('${c.id}')"><span class="badge ${statusBadgeClass(c.status)}">${escapeHtml(c.status)}</span></td>
-      <td onclick="openContactDetails('${c.id}')">
+      <td onclick="openContactDetails('${contactId}')">${escapeHtml(c.phone_number_masked || '-')}</td>
+      <td onclick="openContactDetails('${contactId}')"><span class="badge ${statusBadgeClass(c.status)}">${escapeHtml(c.status)}</span></td>
+      <td onclick="openContactDetails('${contactId}')">
         <div style="display:flex; align-items:center; gap:8px;">
           <div style="width:30px; height:4px; background:var(--bg-hover); border-radius:2px; overflow:hidden;">
-            <div style="width:${c.lead_score || 0}%; height:100%; background:${getLeadScoreColor(c.lead_score)};"></div>
+            <div style="width:${leadScore}%; height:100%; background:${getLeadScoreColor(leadScore)};"></div>
           </div>
-          <span style="font-size:0.75rem; font-weight:700;">${c.lead_score || 0}</span>
+          <span style="font-size:0.75rem; font-weight:700;">${leadScore}</span>
         </div>
       </td>
       <td>${c.language_preference === 'si' ? '🇱🇰 Sinhala' : '🇬🇧 English'}</td>
       <td>${c.last_message_at ? timeAgo(c.last_message_at) : 'Never'}</td>
     </tr>
-  `).join('');
+  `;}).join('');
 }
 
 function getLeadScoreColor(score) {
+  score = Number(score) || 0;
   if (score >= 80) return '#10b981'; // Green
   if (score >= 50) return '#f59e0b'; // Orange
   return '#64748b'; // Gray
@@ -1311,14 +1371,16 @@ async function loadAuditLogs() {
       flags = [];
     }
     
+    const confidence = Number(log.confidence);
+    const confidenceText = Number.isFinite(confidence) ? `${Math.round(confidence * 100)}%` : '-';
     return `
     <tr>
       <td><small>${new Date(log.created_at).toLocaleString()}</small></td>
-      <td><span class="badge badge-blue">${log.agent_type}</span></td>
-      <td>${log.action}</td>
-      <td>${log.intent || '—'}</td>
-      <td>${log.confidence != null ? (parseFloat(log.confidence) * 100).toFixed(0) + '%' : '—'}</td>
-      <td>${flags.map(f => `<span class="badge badge-orange" style="margin:1px">${f}</span>`).join(' ') || '—'}</td>
+      <td><span class="badge badge-blue">${escapeHtml(log.agent_type || '')}</span></td>
+      <td>${escapeHtml(log.action || '')}</td>
+      <td>${escapeHtml(log.intent || '-')}</td>
+      <td>${confidenceText}</td>
+      <td>${flags.map(f => `<span class="badge badge-orange" style="margin:1px">${escapeHtml(f)}</span>`).join(' ') || '-'}</td>
     </tr>
   `;}).join('');
 }
@@ -1389,7 +1451,7 @@ async function loadTemplates() {
   if (!select) return;
   
   select.innerHTML = '<option value="">— Select Template —</option>' + 
-    Object.keys(data).map(key => `<option value="${key}">${key}</option>`).join('');
+    Object.keys(data).map(key => `<option value="${escapeAttr(key)}">${escapeHtml(key)}</option>`).join('');
 }
 
 function handleTemplateSelect() {
@@ -1441,27 +1503,27 @@ async function loadAgents() {
     <tr>
       <td>
         <div class="user-info">
-          <div class="user-avatar" style="width:30px;height:30px;font-size:0.75rem">${agent.display_name[0].toUpperCase()}</div>
-          <span>${agent.display_name}</span>
+          <div class="user-avatar" style="width:30px;height:30px;font-size:0.75rem">${escapeHtml((agent.display_name || 'A')[0].toUpperCase())}</div>
+          <span>${escapeHtml(agent.display_name || '')}</span>
         </div>
       </td>
-      <td>${agent.email}</td>
-      <td><span class="badge badge-purple">${agent.role}</span></td>
-      <td><span class="badge badge-gray">${agent.team}</span></td>
-      <td><span class="badge ${agent.status === 'active' ? 'badge-green' : (agent.status === 'suspended' ? 'badge-red' : 'badge-gray')}">${agent.status}</span></td>
+      <td>${escapeHtml(agent.email || '')}</td>
+      <td><span class="badge badge-purple">${escapeHtml(agent.role || '')}</span></td>
+      <td><span class="badge badge-gray">${escapeHtml(agent.team || '')}</span></td>
+      <td><span class="badge ${agent.status === 'active' ? 'badge-green' : (agent.status === 'suspended' ? 'badge-red' : 'badge-gray')}">${escapeHtml(agent.status || '')}</span></td>
       <td>${agent.active_conversations || 0}</td>
       <td>${agent.last_active_at ? formatTime(agent.last_active_at) : 'Never'}</td>
       <td>
         <div class="action-group">
-          <button class="btn-icon" onclick="showEditAgentModal('${agent.id}', '${agent.display_name}', '${agent.role}', '${agent.team}', '${agent.status}')" title="Edit">
+          <button class="btn-icon" onclick="showEditAgentModal('${escapeInlineJs(agent.id)}', '${escapeInlineJs(agent.display_name)}', '${escapeInlineJs(agent.role)}', '${escapeInlineJs(agent.team)}', '${escapeInlineJs(agent.status)}')" title="Edit">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
           </button>
-          <button class="btn-icon" onclick="toggleAgentStatus('${agent.id}', '${agent.status}')" title="${agent.status === 'suspended' ? 'Activate' : 'Suspend'}" style="color:${agent.status === 'suspended' ? 'var(--accent-green)' : 'var(--accent-orange)'}">
+          <button class="btn-icon" onclick="toggleAgentStatus('${escapeInlineJs(agent.id)}', '${escapeInlineJs(agent.status)}')" title="${agent.status === 'suspended' ? 'Activate' : 'Suspend'}" style="color:${agent.status === 'suspended' ? 'var(--accent-green)' : 'var(--accent-orange)'}">
             ${agent.status === 'suspended' 
               ? '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
               : '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>'}
           </button>
-          <button class="btn-icon" onclick="handleDeleteAgent('${agent.id}')" title="Delete" style="color:var(--accent-red)">
+          <button class="btn-icon" onclick="handleDeleteAgent('${escapeInlineJs(agent.id)}')" title="Delete" style="color:var(--accent-red)">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
           </button>
         </div>
@@ -1612,12 +1674,12 @@ async function loadKnowledgeDocuments() {
 
   tbody.innerHTML = data.documents.map(doc => `
     <tr>
-      <td><strong>${doc.title}</strong></td>
-      <td><span class="badge badge-gray">${doc.doc_type}</span></td>
-      <td><span class="badge badge-green">${doc.status}</span></td>
+      <td><strong>${escapeHtml(doc.title || '')}</strong></td>
+      <td><span class="badge badge-gray">${escapeHtml(doc.doc_type || '')}</span></td>
+      <td><span class="badge badge-green">${escapeHtml(doc.status || '')}</span></td>
       <td>${doc.total_chunks || 0}</td>
       <td>
-        <button class="btn-icon" onclick="handleDeleteKnowledgeDoc('${doc.id}')" style="color:var(--accent-red)">
+        <button class="btn-icon" onclick="handleDeleteKnowledgeDoc('${escapeInlineJs(doc.id)}')" style="color:var(--accent-red)">
           <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
         </button>
       </td>
@@ -1945,7 +2007,7 @@ async function handleSimulate(e) {
   if (!text) return;
 
   const msgList = document.getElementById('sim-messages');
-  msgList.innerHTML += `<div class="sim-msg user"><div class="sim-bubble">${text}</div></div>`;
+  msgList.innerHTML += `<div class="sim-msg user"><div class="sim-bubble">${escapeHtml(text)}</div></div>`;
   document.getElementById('sim-text').value = '';
   msgList.scrollTop = msgList.scrollHeight;
 
@@ -1960,7 +2022,7 @@ async function handleSimulate(e) {
     // Display bot reply in sim chat
     if (result.reply_text) {
       setTimeout(() => {
-        msgList.innerHTML += `<div class="sim-msg bot"><div class="sim-bubble">${result.reply_text}</div></div>`;
+        msgList.innerHTML += `<div class="sim-msg bot"><div class="sim-bubble">${escapeHtml(result.reply_text)}</div></div>`;
         msgList.scrollTop = msgList.scrollHeight;
       }, 500);
     }
@@ -1971,28 +2033,28 @@ async function handleSimulate(e) {
       <div style="display:flex;flex-direction:column;gap:0.75rem">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:0.8rem;color:var(--text-muted)">Detected Intent</span>
-          <span class="badge badge-purple">${result.intent}</span>
+          <span class="badge badge-purple">${escapeHtml(result.intent || '-')}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:0.8rem;color:var(--text-muted)">Confidence Score</span>
-          <span style="font-weight:700">${(result.confidence * 100).toFixed(1)}%</span>
+          <span style="font-weight:700">${clampPercent((Number(result.confidence) || 0) * 100).toFixed(1)}%</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:0.8rem;color:var(--text-muted)">Next Action</span>
-          <span class="badge badge-blue">${result.next_action}</span>
+          <span class="badge badge-blue">${escapeHtml(result.next_action || '-')}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:0.8rem;color:var(--text-muted)">Assigned Team</span>
-          <span class="badge badge-gray">${result.assigned_team}</span>
+          <span class="badge badge-gray">${escapeHtml(result.assigned_team || '-')}</span>
         </div>
         <div style="margin-top:0.5rem">
           <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem">Active Flags</div>
           <div style="display:flex;flex-wrap:wrap;gap:0.25rem">
-            ${result.flags.map(f => `<span class="badge badge-orange" style="font-size:0.65rem">${f}</span>`).join('') || '<span style="color:var(--text-muted);font-size:0.7rem">None</span>'}
+            ${(result.flags || []).map(f => `<span class="badge badge-orange" style="font-size:0.65rem">${escapeHtml(f)}</span>`).join('') || '<span style="color:var(--text-muted);font-size:0.7rem">None</span>'}
           </div>
         </div>
         <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border-color)">
-          <div style="font-size:0.75rem;color:var(--text-muted)">Processing Time: <strong>${res.result.pipeline_time_ms}ms</strong></div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">Processing Time: <strong>${Number(res.result.pipeline_time_ms) || 0}ms</strong></div>
         </div>
       </div>
     `;
@@ -2061,7 +2123,7 @@ function showToast(message, type = 'info') {
   `;
 
   const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
-  toast.innerHTML = `<span>${icon}</span><span style="font-size: 0.9rem; font-weight: 500;">${message}</span>`;
+  toast.innerHTML = `<span>${icon}</span><span style="font-size: 0.9rem; font-weight: 500;">${escapeHtml(message)}</span>`;
 
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
@@ -2087,12 +2149,12 @@ async function loadAppointments() {
 
   container.innerHTML = data.map(app => `
     <tr>
-      <td>${app.appointment_date}</td>
-      <td>${app.appointment_time}</td>
-      <td><strong>${app.contact_name || 'Guest'}</strong></td>
-      <td>${app.contact_phone}</td>
-      <td><span style="font-size:0.8rem">${app.reason || 'Not specified'}</span></td>
-      <td><span class="badge ${app.status === 'confirmed' ? 'badge-green' : 'badge-orange'}">${app.status}</span></td>
+      <td>${escapeHtml(app.appointment_date || '')}</td>
+      <td>${escapeHtml(app.appointment_time || '')}</td>
+      <td><strong>${escapeHtml(app.contact_name || 'Guest')}</strong></td>
+      <td>${escapeHtml(app.contact_phone || '')}</td>
+      <td><span style="font-size:0.8rem">${escapeHtml(app.reason || 'Not specified')}</span></td>
+      <td><span class="badge ${app.status === 'confirmed' ? 'badge-green' : 'badge-orange'}">${escapeHtml(app.status || '')}</span></td>
       <td>
         <button class="btn btn-sm btn-outline">Cancel</button>
       </td>
@@ -2116,22 +2178,22 @@ async function loadCampaigns() {
       <div class="card-body" style="padding: 1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
           <div>
-            <h3 style="margin:0; font-size:1.1rem;">${c.name}</h3>
-            <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0;">Target: <strong>${c.target_segment.replace('_', ' ')}</strong></p>
+            <h3 style="margin:0; font-size:1.1rem;">${escapeHtml(c.name || '')}</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin:4px 0;">Target: <strong>${escapeHtml((c.target_segment || '').replace('_', ' '))}</strong></p>
           </div>
-          <span class="badge ${c.status === 'completed' ? 'badge-green' : 'badge-blue'}">${c.status.toUpperCase()}</span>
+          <span class="badge ${c.status === 'completed' ? 'badge-green' : 'badge-blue'}">${escapeHtml((c.status || '').toUpperCase())}</span>
         </div>
         
         <div style="margin-top:1rem; background:var(--bg-hover); padding:0.75rem; border-radius:6px; font-style:italic; font-size:0.85rem; border: 1px solid var(--border-color);">
-          "${c.message_template}"
+          "${escapeHtml(c.message_template || '')}"
         </div>
 
         <div style="margin-top:1rem; display:flex; justify-content:space-between; align-items:center;">
           <div style="font-size:0.8rem;">
-            Sent: <strong>${c.sent_count} / ${c.total_recipients}</strong>
+            Sent: <strong>${Number(c.sent_count) || 0} / ${Number(c.total_recipients) || 0}</strong>
           </div>
           <div>
-            ${c.status === 'draft' ? `<button class="btn btn-sm btn-primary" onclick="handleExecuteCampaign('${c.id}')">Start Campaign</button>` : ''}
+            ${c.status === 'draft' ? `<button class="btn btn-sm btn-primary" onclick="handleExecuteCampaign('${escapeInlineJs(c.id)}')">Start Campaign</button>` : ''}
           </div>
         </div>
       </div>
@@ -2258,10 +2320,10 @@ async function loadContactIntelligence(contactId) {
   
   const data = await apiCall(`/api/contacts/${contactId}/intelligence`);
   if (data) {
-    summaryBox.innerHTML = data.summary || 'No summary available.';
+    summaryBox.innerHTML = escapeHtml(data.summary || 'No summary available.');
     
     if (data.tags && data.tags.length > 0) {
-      tagBox.innerHTML = data.tags.map(tag => `<span class="badge badge-blue" style="margin: 2px;">${tag}</span>`).join('');
+      tagBox.innerHTML = data.tags.map(tag => `<span class="badge badge-blue" style="margin: 2px;">${escapeHtml(tag)}</span>`).join('');
     } else {
       tagBox.innerHTML = '<span style="font-size:0.7rem; color:var(--text-muted);">No tags detected</span>';
     }
@@ -2286,7 +2348,7 @@ async function loadContactTimeline(contactId) {
     timeline.innerHTML = data.timeline.map(item => `
       <div class="timeline-item">
         <div class="timeline-time">${timeAgo(item.timestamp)}</div>
-        <div class="timeline-content">${item.content}</div>
+        <div class="timeline-content">${escapeHtml(item.content || '')}</div>
       </div>
     `).join('');
   } else {
@@ -2448,13 +2510,13 @@ function renderPaletteDefault() {
 
 function renderPaletteItem(item) {
   return `
-    <div class="palette-item" onclick="executePaletteAction('${item.id}')">
-      <div class="palette-item-icon">${item.icon}</div>
+    <div class="palette-item" onclick="executePaletteAction('${escapeInlineJs(item.id)}')">
+      <div class="palette-item-icon">${escapeHtml(item.icon || '')}</div>
       <div class="palette-item-text">
-        <span class="palette-item-title">${item.title}</span>
-        <span class="palette-item-desc">${item.desc}</span>
+        <span class="palette-item-title">${escapeHtml(item.title || '')}</span>
+        <span class="palette-item-desc">${escapeHtml(item.desc || '')}</span>
       </div>
-      ${item.shortcut ? `<span class="palette-item-shortcut">${item.shortcut}</span>` : ''}
+      ${item.shortcut ? `<span class="palette-item-shortcut">${escapeHtml(item.shortcut)}</span>` : ''}
     </div>
   `;
 }
@@ -2484,7 +2546,7 @@ document.getElementById('palette-search').addEventListener('input', async (e) =>
   );
 
   // Search contacts via API
-  const contactData = await apiCall(`/api/contacts?search=${query}&limit=5`);
+  const contactData = await apiCall(`/api/contacts?search=${encodeURIComponent(query)}&limit=5`);
   const contacts = contactData ? contactData.contacts : [];
 
   const results = document.getElementById('palette-results');
@@ -2538,7 +2600,7 @@ function updateBreadcrumbs(page) {
     bc.className = 'breadcrumbs';
     container.insertBefore(bc, title);
   }
-  bc.innerHTML = `<span class="breadcrumb-item">Pro CRM</span> <span class="breadcrumb-item">${page}</span>`;
+  bc.innerHTML = `<span class="breadcrumb-item">Pro CRM</span> <span class="breadcrumb-item">${escapeHtml(page)}</span>`;
 }
 
 // ─── CANNED RESPONSES (PHASE 5) ───
@@ -2551,7 +2613,7 @@ async function loadCannedResponses() {
 
   cannedResponses = data;
   select.innerHTML = '<option value="">— Select Template —</option>' + 
-    data.map(r => `<option value="${r.id}">[${r.shortcut}] ${r.content.substring(0, 30)}...</option>`).join('');
+    data.map(r => `<option value="${escapeAttr(r.id)}">[${escapeHtml(r.shortcut)}] ${escapeHtml((r.content || '').substring(0, 30))}...</option>`).join('');
 }
 
 function handleTemplateSelect() {
@@ -2767,8 +2829,8 @@ async function loadBackups() {
   listEl.innerHTML = data.backups.map(b => `
     <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem; border-bottom:1px solid var(--border-color); font-size:0.75rem;">
       <div>
-        <div style="font-weight:600;">${b.filename}</div>
-        <div style="color:var(--text-muted);">${new Date(b.createdAt).toLocaleString()} (${(b.size / 1024 / 1024).toFixed(2)} MB)</div>
+        <div style="font-weight:600;">${escapeHtml(b.filename || '')}</div>
+        <div style="color:var(--text-muted);">${new Date(b.createdAt).toLocaleString()} (${((Number(b.size) || 0) / 1024 / 1024).toFixed(2)} MB)</div>
       </div>
       <button class="btn btn-sm btn-outline" style="padding:2px 8px; font-size:0.7rem;" onclick="showToast('Restore from server backup not yet active', 'warning')">Restore</button>
     </div>
@@ -2796,8 +2858,29 @@ async function createSystemBackup() {
   }
 }
 
-function downloadDatabase() {
-  window.open(`${API_BASE}/api/system/download-db?token=${authToken}`, '_blank');
+async function downloadDatabase() {
+  try {
+    const res = await fetch(`${API_BASE}/api/system/download-db`, {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    if (res.status === 401) {
+      handleLogout();
+      return;
+    }
+    if (!res.ok) throw new Error('Download failed');
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `procrm_export_${new Date().toISOString().split('T')[0]}.db`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showToast('Database download failed', 'error');
+  }
 }
 
 function restoreFromLocalFile() {

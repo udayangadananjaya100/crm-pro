@@ -17,7 +17,7 @@ const scheduledMessageService = require('../services/scheduledMessage');
 const auditLogger = require('../agents/auditLogger');
 const { getQueueStats } = require('../queues/messageQueue');
 const { getRulesVersion, reloadRules } = require('../utils/rulesLoader');
-const { query } = require('../config/database');
+const { query, transaction } = require('../config/database');
 const { jsonToCsv } = require('../utils/csv');
 const events = require('../utils/events');
 const logger = require('../utils/logger');
@@ -402,7 +402,7 @@ router.post('/conversations/:id/transfer', authenticate, async (req, res) => {
   }
 });
 
-router.post('/conversations/:id/csat', async (req, res) => {
+router.post('/conversations/:id/csat', authenticate, async (req, res) => {
   try {
     const { score, comment } = req.body;
     const csatService = require('../services/csat');
@@ -480,17 +480,30 @@ router.post('/conversations/:id/reply', authenticate, async (req, res) => {
     const { text } = req.body;
     if (!text) return res.status(400).json({ error: 'Message text required' });
 
-    const conversationRes = await query('SELECT * FROM conversations WHERE id = $1', [req.params.id]);
+    const conversationRes = await query(
+      `SELECT c.*, ct.phone_number, ct.display_name as contact_name
+       FROM conversations c
+       LEFT JOIN contacts ct ON c.contact_id = ct.id
+       WHERE c.id = $1`,
+      [req.params.id]
+    );
     const conversation = conversationRes.rows[0];
     
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    if (!conversation.phone_number) return res.status(400).json({ error: 'Conversation contact phone missing' });
 
     const contactId = conversation.contact_id;
 
-    // Store outbound message (manual)
+    const whatsapp = require('../services/whatsapp');
+    const delivery = await whatsapp.sendTextMessage(conversation.phone_number, text);
+    if (!delivery.success) {
+      return res.status(502).json({ error: 'WhatsApp delivery failed', details: delivery.error });
+    }
+
     const message = await conversationService.storeOutboundMessage(req.params.id, contactId, {
       content: text,
       aiGenerated: false,
+      whatsappMessageId: delivery.messageId,
     });
 
     // Auto-assign to current agent if not assigned
@@ -634,7 +647,7 @@ router.get('/system/download-db', authenticate, authorize('admin'), async (req, 
   try {
     const path = require('path');
     const fs = require('fs');
-    const dbPath = path.join(__dirname, '..', '..', 'data', 'procrm.db');
+    const dbPath = process.env.SQLITE_DB_PATH || path.join(__dirname, '..', '..', 'data', 'procrm.db');
     
     if (!fs.existsSync(dbPath)) {
       return res.status(404).json({ error: 'Database file not found' });
@@ -672,7 +685,8 @@ router.post('/system/settings', authenticate, authorize('admin'), async (req, re
     
     if (!key) return res.status(400).json({ error: 'Key required' });
     
-    await setSetting(key, value);
+    const ok = await setSetting(key, value);
+    if (!ok) return res.status(500).json({ error: 'Failed to save setting' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -749,10 +763,15 @@ router.post('/system/register-webhook', authenticate, authorize('admin'), async 
     }
     
     const { setSetting } = require('../utils/settings');
-    await setSetting('META_APP_ID', appId);
-    await setSetting('META_APP_SECRET', appSecret);
-    await setSetting('WEBHOOK_VERIFY_TOKEN', verifyToken);
-    await setSetting('PUBLIC_BASE_URL', baseUrl);
+    const saved = await Promise.all([
+      setSetting('META_APP_ID', appId),
+      setSetting('META_APP_SECRET', appSecret),
+      setSetting('WEBHOOK_VERIFY_TOKEN', verifyToken),
+      setSetting('PUBLIC_BASE_URL', baseUrl),
+    ]);
+    if (saved.some((ok) => !ok)) {
+      return res.status(500).json({ error: 'Failed to save webhook settings' });
+    }
     
     const axios = require('axios');
     const callbackUrl = `${baseUrl.replace(/\/$/, '')}/api/webhook/whatsapp`;
@@ -830,7 +849,7 @@ router.get('/dashboard/stats', authenticate, async (req, res) => {
       query("SELECT COUNT(*) as count FROM contacts WHERE status = 'active'"),
       query("SELECT COUNT(*) as count FROM conversations WHERE status IN ('open', 'assigned', 'pending')"),
       query("SELECT COUNT(*) as count FROM messages WHERE created_at >= CURRENT_DATE"),
-      query("SELECT COUNT(*) as count FROM conversations WHERE sla_breached = 1 AND status != 'closed'"),
+      query("SELECT COUNT(*) as count FROM conversations WHERE sla_breached = true AND status != 'closed'"),
       query(`
         SELECT 
           COUNT(CASE WHEN lead_score >= 80 THEN 1 END) as hot,

@@ -255,7 +255,10 @@ async function generateSummary(transcript) {
  */
 async function transcribeAudio(audioBuffer, mimeType) {
   try {
-    const model = await getModel('gemini-1.5-flash');
+    const genAIClient = await getGenAI();
+    if (!genAIClient) return null;
+
+    const model = genAIClient.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
     const result = await model.generateContent([
       {

@@ -2,7 +2,7 @@
  * Pro CRM — Contact Service
  * Manages customer contacts in the database
  */
-const { query, transaction } = require('../config/database');
+const { query, transaction, getAdapter } = require('../config/database');
 const { maskPII } = require('../utils/piiMasker');
 const logger = require('../utils/logger');
 
@@ -43,7 +43,7 @@ async function findOrCreateContact(phoneNumber, displayName = 'Unknown') {
  */
 async function getContactById(contactId) {
   const result = await query('SELECT * FROM contacts WHERE id = $1', [contactId]);
-  return result.rows[0] || null;
+  return normalizeContact(result.rows[0]) || null;
 }
 
 /**
@@ -51,7 +51,7 @@ async function getContactById(contactId) {
  */
 async function getContactByPhone(phoneNumber) {
   const result = await query('SELECT * FROM contacts WHERE phone_number = $1', [phoneNumber]);
-  return result.rows[0] || null;
+  return normalizeContact(result.rows[0]) || null;
 }
 
 /**
@@ -81,9 +81,22 @@ async function updateLeadScore(contactId, scoreDelta) {
  * Add tags to contact
  */
 async function addTags(contactId, newTags) {
+  const tagsToAdd = Array.isArray(newTags) ? newTags : [newTags].filter(Boolean);
+  if (getAdapter() === 'sqlite') {
+    const existing = await getContactById(contactId);
+    const tags = [...new Set([...(existing?.tags || []), ...tagsToAdd])];
+    await query('UPDATE contacts SET tags = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [
+      contactId,
+      JSON.stringify(tags),
+    ]);
+    return tags;
+  }
+
   const result = await query(
-    `UPDATE contacts SET tags = array_cat(tags, $2::text[]) WHERE id = $1 RETURNING tags`,
-    [contactId, newTags]
+    `UPDATE contacts
+     SET tags = (SELECT ARRAY(SELECT DISTINCT unnest(tags || $2::text[])))
+     WHERE id = $1 RETURNING tags`,
+    [contactId, tagsToAdd]
   );
   return result.rows[0]?.tags || [];
 }
@@ -158,7 +171,7 @@ async function listContacts({ page = 1, limit = 20, status, search }) {
   );
 
   return {
-    contacts: result.rows,
+    contacts: result.rows.map(normalizeContact),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -232,3 +245,15 @@ module.exports = {
   createContact,
   updateContact
 };
+
+function normalizeContact(contact) {
+  if (!contact) return contact;
+  if (typeof contact.tags === 'string') {
+    try {
+      contact.tags = JSON.parse(contact.tags);
+    } catch (e) {
+      contact.tags = contact.tags ? contact.tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [];
+    }
+  }
+  return contact;
+}

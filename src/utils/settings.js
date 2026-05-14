@@ -1,4 +1,4 @@
-const { query } = require('../config/database');
+const { query, getAdapter } = require('../config/database');
 const env = require('../config/environment');
 const logger = require('./logger');
 const redis = require('../config/redis');
@@ -71,12 +71,15 @@ async function getSetting(key, envFallbackKey) {
  */
 async function setSetting(key, value, category = 'general', description = null, isPublic = false) {
   try {
-    const stringValue = typeof value === 'object' ? JSON.stringify(value) : value;
-    const trimmedValue = typeof stringValue === 'string' ? stringValue.trim() : stringValue;
-    
-    // Convert primitive values to JSON format so the database doesn't crash if it expects JSONB
-    // Actually PostgreSQL jsonb accepts valid JSON strings. Numbers/booleans need to be strings.
-    const finalValue = typeof value === 'string' && !value.startsWith('{') && !value.startsWith('[') ? `"${trimmedValue}"` : trimmedValue;
+    let finalValue;
+    if (typeof value === 'string') {
+      const trimmedValue = value.trim();
+      finalValue = trimmedValue.startsWith('{') || trimmedValue.startsWith('[')
+        ? trimmedValue
+        : JSON.stringify(trimmedValue);
+    } else {
+      finalValue = JSON.stringify(value);
+    }
 
     await query(
       `INSERT INTO settings (key, value, category, description, is_public, updated_at) 
@@ -103,7 +106,11 @@ async function getAllPublic() {
   if (!initialized) await loadSettings();
   
   try {
-    const result = await query('SELECT key, value FROM settings WHERE is_public = true');
+    const result = await query(
+      getAdapter() === 'sqlite'
+        ? 'SELECT key, value FROM settings WHERE is_public = 1'
+        : 'SELECT key, value FROM settings WHERE is_public = true'
+    );
     const publicSettings = {};
     for (const row of result.rows) {
       let val = row.value;
@@ -119,4 +126,10 @@ async function getAllPublic() {
   }
 }
 
-module.exports = { getSetting, setSetting, loadSettings, getAllPublic };
+module.exports = {
+  getSetting,
+  setSetting,
+  loadSettings,
+  getAllPublic,
+  getPublicSettings: getAllPublic,
+};

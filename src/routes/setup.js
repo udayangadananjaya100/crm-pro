@@ -5,6 +5,11 @@ const { query } = require('../config/database');
 const { getSetting, setSetting } = require('../utils/settings');
 const logger = require('../utils/logger');
 
+async function saveSettingOrThrow(...args) {
+  const ok = await setSetting(...args);
+  if (!ok) throw new Error(`Failed to save setting: ${args[0]}`);
+}
+
 // Middleware to check if setup is already complete
 async function ensureNotSetup(req, res, next) {
   try {
@@ -68,15 +73,15 @@ router.post('/complete', ensureNotSetup, async (req, res) => {
     );
 
     // 2. Save Settings
-    if (companyName) await setSetting('company_name', companyName, 'branding');
-    if (licenseKey) await setSetting('license_key', licenseKey, 'system');
+    if (companyName) await saveSettingOrThrow('company_name', companyName, 'branding');
+    if (licenseKey) await saveSettingOrThrow('license_key', licenseKey, 'system');
     
-    if (whatsappToken) await setSetting('WHATSAPP_ACCESS_TOKEN', whatsappToken, 'meta');
-    if (whatsappPhoneId) await setSetting('WHATSAPP_PHONE_NUMBER_ID', whatsappPhoneId, 'meta');
-    if (geminiApiKey) await setSetting('GEMINI_API_KEY', geminiApiKey, 'ai');
+    if (whatsappToken) await saveSettingOrThrow('WHATSAPP_ACCESS_TOKEN', whatsappToken, 'meta');
+    if (whatsappPhoneId) await saveSettingOrThrow('WHATSAPP_PHONE_NUMBER_ID', whatsappPhoneId, 'meta');
+    if (geminiApiKey) await saveSettingOrThrow('GEMINI_API_KEY', geminiApiKey, 'ai');
 
     // 3. Mark setup as complete
-    await setSetting('setup_completed', 'true', 'system');
+    await saveSettingOrThrow('setup_completed', 'true', 'system');
 
     logger.info('🎉 Setup wizard completed successfully!');
     

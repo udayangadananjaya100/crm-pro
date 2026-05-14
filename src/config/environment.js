@@ -1,6 +1,6 @@
 /**
- * Pro CRM — Environment Configuration
- * Loads and validates all environment variables
+ * Pro CRM - Environment Configuration
+ * Loads and validates all environment variables.
  */
 require('dotenv').config();
 
@@ -9,6 +9,7 @@ const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT, 10) || 3000,
   API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:3000',
+  ADMIN_DASHBOARD_URL: process.env.ADMIN_DASHBOARD_URL || 'http://localhost:3000',
 
   // Database
   DATABASE_URL: process.env.DATABASE_URL,
@@ -22,13 +23,14 @@ const env = {
   WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID,
   WHATSAPP_BUSINESS_ACCOUNT_ID: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
   WEBHOOK_VERIFY_TOKEN: process.env.WEBHOOK_VERIFY_TOKEN,
+  META_APP_SECRET: process.env.META_APP_SECRET,
   META_API_VERSION: process.env.META_API_VERSION || 'v21.0',
 
   // AI
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
 
   // Auth
-  JWT_SECRET: process.env.JWT_SECRET,
+  JWT_SECRET: process.env.JWT_SECRET || ((process.env.NODE_ENV || 'development') === 'development' ? 'dev-only-secret-do-not-use-in-production' : undefined),
   JWT_EXPIRY: process.env.JWT_EXPIRY || '24h',
 
   // Notifications
@@ -43,27 +45,25 @@ const env = {
   isProd: process.env.NODE_ENV === 'production',
 };
 
-/**
- * Validate required env vars for production
- */
 function validateEnv() {
-  const required = [
-    'DATABASE_URL',
-    'WHATSAPP_ACCESS_TOKEN',
-    'WHATSAPP_PHONE_NUMBER_ID',
-    'WEBHOOK_VERIFY_TOKEN',
-    'GEMINI_API_KEY',
-    'JWT_SECRET',
-  ];
-
-  const missing = required.filter((key) => !env[key]);
+  const missing = ['JWT_SECRET'].filter((key) => !env[key]);
+  const placeholderJwtSecrets = new Set([
+    'changeme_production_secret_key',
+    'your_jwt_secret_change_this_in_production',
+    'change_me',
+    'changeme',
+  ]);
 
   if (missing.length > 0 && env.isProd) {
-    throw new Error(`❌ Missing required env vars: ${missing.join(', ')}`);
+    throw new Error(`Missing required env vars: ${missing.join(', ')}`);
+  }
+
+  if (env.isProd && placeholderJwtSecrets.has(env.JWT_SECRET)) {
+    throw new Error('JWT_SECRET must be changed before running in production');
   }
 
   if (missing.length > 0) {
-    console.warn(`⚠️  Missing env vars (OK for dev): ${missing.join(', ')}`);
+    console.warn(`Missing env vars (OK for dev): ${missing.join(', ')}`);
   }
 }
 

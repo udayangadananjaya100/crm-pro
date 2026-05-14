@@ -13,7 +13,7 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "setup": "docker compose up -d && timeout /t 5 && node db/migrate.js && node db/seed.js",
-    "test": "echo \"Tests coming soon\" && exit 0"
+    "test": "node tests/smoke.js"
   },
   "keywords": [
     "whatsapp",

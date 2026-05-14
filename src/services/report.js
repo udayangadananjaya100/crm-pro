@@ -1,32 +1,42 @@
 /**
- * Pro CRM — Scheduled Reporting Service
- * Generates automated performance summaries for management
+ * Pro CRM - Scheduled Reporting Service
  */
-const { query } = require('../config/database');
+const { query, getAdapter } = require('../config/database');
 const logger = require('../utils/logger');
 
 async function generateDailyReport() {
   try {
-    const stats = await query(`
-      SELECT 
-        COUNT(*) FILTER (WHERE direction = 'inbound') as total_inbound,
-        COUNT(*) FILTER (WHERE direction = 'outbound') as total_outbound,
-        AVG(feedback_score) as avg_ai_score
-      FROM messages 
-      WHERE created_at >= NOW() - INTERVAL '24 hours'
-    `);
+    const statsSql = getAdapter() === 'sqlite'
+      ? `SELECT
+           SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as total_inbound,
+           SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as total_outbound,
+           AVG(feedback_score) as avg_ai_score
+         FROM messages
+         WHERE created_at >= datetime('now', '-24 hours')`
+      : `SELECT
+           SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as total_inbound,
+           SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as total_outbound,
+           AVG(feedback_score) as avg_ai_score
+         FROM messages
+         WHERE created_at >= NOW() - INTERVAL '24 hours'`;
 
-    const activeAgents = await query(`
-      SELECT COUNT(DISTINCT agent_id) as count 
-      FROM shift_logs 
-      WHERE start_time >= NOW() - INTERVAL '24 hours'
-    `);
+    const agentsSql = getAdapter() === 'sqlite'
+      ? `SELECT COUNT(DISTINCT agent_id) as count
+         FROM shift_logs
+         WHERE start_time >= datetime('now', '-24 hours')`
+      : `SELECT COUNT(DISTINCT agent_id) as count
+         FROM shift_logs
+         WHERE start_time >= NOW() - INTERVAL '24 hours'`;
+
+    const stats = await query(statsSql);
+    const activeAgents = await query(agentsSql);
+    const messages = stats.rows[0] || {};
 
     const report = {
       date: new Date().toLocaleDateString(),
-      messages: stats.rows[0],
-      activeAgents: activeAgents.rows[0].count,
-      summary: `System processed ${stats.rows[0].total_inbound} inbound messages in the last 24h.`
+      messages,
+      activeAgents: activeAgents.rows[0]?.count || 0,
+      summary: `System processed ${messages.total_inbound || 0} inbound messages in the last 24h.`,
     };
 
     logger.info('Daily report generated', report);
@@ -38,5 +48,5 @@ async function generateDailyReport() {
 }
 
 module.exports = {
-  generateDailyReport
+  generateDailyReport,
 };
