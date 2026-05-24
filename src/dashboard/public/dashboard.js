@@ -1120,29 +1120,36 @@ async function loadConversations() {
   const data = await apiCall(`/api/conversations?${params}`);
 
   if (!data?.conversations?.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">No conversations found</td></tr>';
+    tbody.innerHTML = '<div class="empty-state">No conversations found</div>';
     return;
   }
 
-  tbody.innerHTML = data.conversations.map((c) => `
-    <tr class="clickable-row ${activeConversationId === c.id ? 'active-row' : ''}">
-      <td onclick="openChat('${c.id}')">
-        <div class="contact-info">
-          <div class="avatar-sm" onclick="event.stopPropagation(); openContactDetails('${c.contact_id}')" title="View Contact Details">${escapeHtml((c.contact_name || 'U')[0].toUpperCase())}</div>
-          <div>
-            <div>${escapeHtml(c.contact_name || 'Unknown')}</div>
-            <small>${escapeHtml(c.phone_number_masked || 'No phone')}</small>
+  tbody.innerHTML = data.conversations.map((c) => {
+    const initials = (c.contact_name || 'U')[0].toUpperCase();
+    const statusBadge = `<span class="badge badge-${getStatusColor(c.status)}" style="font-size:0.65rem; padding: 2px 6px;">${escapeHtml(c.status)}</span>`;
+    const teamBadge = c.assigned_team ? `<span class="badge badge-gray" style="font-size:0.65rem; padding: 2px 6px;">${escapeHtml(c.assigned_team)}</span>` : '';
+    const priorityDot = `<span class="priority-dot priority-${c.priority}" title="Priority: ${c.priority}" style="margin: 0;"></span>`;
+    const intentBadge = c.intent ? `<span class="badge badge-purple" style="font-size:0.65rem; padding: 2px 6px;">${escapeHtml(c.intent)}</span>` : '';
+    
+    return `
+      <div class="chat-list-item ${activeConversationId === c.id ? 'active-row' : ''}" onclick="openChat('${c.id}')">
+        <div class="chat-list-item-avatar" onclick="event.stopPropagation(); openContactDetails('${c.contact_id}')" title="View Contact Details">${escapeHtml(initials)}</div>
+        <div class="chat-list-item-details">
+          <div class="chat-list-item-meta">
+            <span class="chat-list-item-name">${escapeHtml(c.contact_name || 'Unknown')}</span>
+            <span class="chat-list-item-time">${formatDate(c.updated_at)}</span>
+          </div>
+          <div class="chat-list-item-preview">${escapeHtml(c.phone_number_masked || 'No phone')}</div>
+          <div class="chat-list-item-badges">
+            ${priorityDot}
+            ${statusBadge}
+            ${teamBadge}
+            ${intentBadge}
           </div>
         </div>
-      </td>
-      <td onclick="openChat('${c.id}')"><span class="badge badge-${getStatusColor(c.status)}">${escapeHtml(c.status)}</span></td>
-      <td onclick="openChat('${c.id}')"><span class="badge badge-gray">${escapeHtml(c.assigned_team || '—')}</span></td>
-      <td onclick="openChat('${c.id}')">${escapeHtml(c.intent || '-')}</td>
-      <td onclick="openChat('${c.id}')"><span class="priority-dot priority-${c.priority}"></span> ${escapeHtml(c.priority)}</td>
-      <td onclick="openChat('${c.id}')">${c.message_count || 0}</td>
-      <td onclick="openChat('${c.id}')">${formatDate(c.updated_at)}</td>
-    </tr>
-  `).join('');
+      </div>
+    `;
+  }).join('');
 }
 
 function getStatusColor(status) {
@@ -1162,12 +1169,15 @@ async function openChat(id) {
   const panel = document.getElementById('chat-panel');
   panel.classList.remove('hidden');
   
-  // Highlight row
-  document.querySelectorAll('#conversations-tbody tr').forEach(tr => {
-    tr.classList.remove('active-row');
+  const placeholder = document.getElementById('chat-placeholder');
+  if (placeholder) placeholder.classList.add('hidden');
+  
+  // Highlight active card
+  document.querySelectorAll('#conversations-tbody .chat-list-item').forEach(item => {
+    item.classList.remove('active-row');
   });
-  const activeRow = [...document.querySelectorAll('#conversations-tbody tr')].find(tr => tr.innerHTML.includes(id));
-  if (activeRow) activeRow.classList.add('active-row');
+  const activeItem = [...document.querySelectorAll('#conversations-tbody .chat-list-item')].find(item => item.outerHTML.includes(id));
+  if (activeItem) activeItem.classList.add('active-row');
 
   // Load chat info and messages
   const convList = await apiCall(`/api/conversations?limit=100`);
@@ -1182,6 +1192,9 @@ async function openChat(id) {
     document.getElementById('chat-status-badge').className = `badge badge-${getStatusColor(current.status)}`;
     document.getElementById('chat-team-badge').textContent = current.assigned_team || '—';
     
+    // Load Right Intelligence Pane
+    loadRightPanelIntelligence(current.contact_id);
+
     // Auto-update copilot suggestion if the panel is open
     const copilotPanel = document.getElementById('copilot-panel');
     if (copilotPanel && !copilotPanel.classList.contains('hidden')) {
@@ -1218,9 +1231,90 @@ async function loadChatMessages(id) {
 function closeChatPanel() {
   activeConversationId = null;
   document.getElementById('chat-panel').classList.add('hidden');
-  document.querySelectorAll('#conversations-tbody tr').forEach(tr => {
-    tr.classList.remove('active-row');
+  
+  const rightPanel = document.getElementById('chat-right-panel');
+  if (rightPanel) rightPanel.classList.add('hidden');
+
+  const placeholder = document.getElementById('chat-placeholder');
+  if (placeholder) placeholder.classList.remove('hidden');
+
+  document.querySelectorAll('#conversations-tbody .chat-list-item').forEach(item => {
+    item.classList.remove('active-row');
   });
+}
+
+async function loadRightPanelIntelligence(contactId) {
+  const rightPanel = document.getElementById('chat-right-panel');
+  if (!rightPanel) return;
+  rightPanel.classList.remove('hidden');
+
+  rightPanel.innerHTML = `
+    <div class="right-panel-section">
+      <h4>Contact Info</h4>
+      <div id="right-contact-details" class="right-detail-box">
+        <div style="font-size:0.8rem; color:var(--text-muted);">Loading details...</div>
+      </div>
+    </div>
+    <div class="right-panel-section">
+      <h4>AI Insights</h4>
+      <div id="right-ai-insights" class="right-detail-box">
+        <div style="font-size:0.8rem; color:var(--text-muted);">Loading insights...</div>
+      </div>
+    </div>
+  `;
+
+  // Fetch contact details
+  const contacts = await apiCall('/api/contacts');
+  const contact = contacts?.find(c => c.id === contactId);
+  const detailsBox = document.getElementById('right-contact-details');
+  if (detailsBox && contact) {
+    detailsBox.innerHTML = `
+      <div class="detail-row"><span class="detail-label">Name:</span> <span class="detail-value">${escapeHtml(contact.name)}</span></div>
+      <div class="detail-row"><span class="detail-label">Phone:</span> <span class="detail-value">${escapeHtml(contact.phone)}</span></div>
+      <div class="detail-row"><span class="detail-label">Source:</span> <span class="detail-value">${escapeHtml(contact.source || 'WhatsApp')}</span></div>
+    `;
+  } else if (detailsBox) {
+    detailsBox.innerHTML = '<div style="font-size:0.8rem; color:var(--text-muted);">Details unavailable</div>';
+  }
+
+  // Fetch intelligence details
+  const data = await apiCall(`/api/contacts/${contactId}/intelligence`);
+  const insightsBox = document.getElementById('right-ai-insights');
+  if (insightsBox && data) {
+    const sentiment = data.sentiment || 'neutral';
+    const sentimentClass = sentiment === 'positive' ? 'badge-green' : (sentiment === 'negative' ? 'badge-red' : 'badge-gray');
+    
+    const score = data.lead_score || 0;
+    const scoreColor = score >= 70 ? '#ff4d4d' : (score >= 40 ? '#ffa500' : '#4da3ff');
+    const scoreText = score >= 70 ? 'Hot' : (score >= 40 ? 'Warm' : 'Cold');
+
+    insightsBox.innerHTML = `
+      <div class="detail-row">
+        <span class="detail-label">Sentiment:</span>
+        <span class="badge ${sentimentClass}">${escapeHtml(sentiment.toUpperCase())}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Lead Temp:</span>
+        <span class="badge" style="background: ${scoreColor}; color: white; border: none; padding: 2px 6px;">${scoreText} (${score})</span>
+      </div>
+      <div class="detail-row" style="flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 0.5rem;">
+        <span class="detail-label" style="font-weight: 600;">AI Summary:</span>
+        <div style="font-size: 0.8rem; line-height: 1.4; color: var(--text-secondary); background: var(--bg-hover); padding: 8px; border-radius: 6px; width: 100%;">
+          ${escapeHtml(data.summary || 'No summary available.')}
+        </div>
+      </div>
+      <div class="detail-row" style="flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 0.5rem;">
+        <span class="detail-label" style="font-weight: 600;">AI Tags:</span>
+        <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; width: 100%;">
+          ${data.tags && data.tags.length > 0 
+            ? data.tags.map(t => `<span class="badge badge-blue">${escapeHtml(t)}</span>`).join('') 
+            : '<span style="font-size:0.75rem; color:var(--text-muted);">No tags detected</span>'}
+        </div>
+      </div>
+    `;
+  } else if (insightsBox) {
+    insightsBox.innerHTML = '<div style="font-size:0.8rem; color:var(--text-muted);">AI insights unavailable</div>';
+  }
 }
 
 async function handleChatSubmit(e) {
@@ -1820,7 +1914,17 @@ async function handleSaveKnowledge() {
 }
 
 // ─── SETTINGS ───
+function switchSettingsTab(tabId) {
+  document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-settings-tab') === tabId);
+  });
+  document.querySelectorAll('.settings-tab-pane').forEach(pane => {
+    pane.classList.toggle('active', pane.id === `settings-pane-${tabId}`);
+  });
+}
+
 async function loadSettingsUI() {
+  switchSettingsTab('general');
   const data = await apiCall('/api/system/settings');
   if (data) {
     if (data.WHATSAPP_PHONE_NUMBER_ID) document.getElementById('set-wa-phone-id').value = data.WHATSAPP_PHONE_NUMBER_ID;
