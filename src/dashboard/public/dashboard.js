@@ -273,6 +273,7 @@ async function handleSetup(e) {
   const adminEmail = document.getElementById('setup-admin-email').value;
   const adminPassword = document.getElementById('setup-admin-password').value;
   const companyName = document.getElementById('setup-company-name').value;
+  const licenseKey = document.getElementById('setup-license-key').value;
   const whatsappPhoneId = document.getElementById('setup-wa-phone-id').value;
   const whatsappToken = document.getElementById('setup-wa-token').value;
   const geminiApiKey = document.getElementById('setup-gemini-key').value;
@@ -288,7 +289,7 @@ async function handleSetup(e) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        adminName, adminEmail, adminPassword, companyName, 
+        adminName, adminEmail, adminPassword, companyName, licenseKey,
         whatsappPhoneId, whatsappToken, geminiApiKey
       })
     });
@@ -1939,6 +1940,33 @@ async function loadSettingsUI() {
       document.getElementById('set-brand-color-text').value = data.BRAND_COLOR;
     }
     
+    // Licensing
+    if (data.license_key && data.license_key !== 'null') {
+      document.getElementById('set-license-key').value = data.license_key;
+    } else {
+      document.getElementById('set-license-key').value = '';
+    }
+    
+    const licenseStatusEl = document.getElementById('license-status-badge');
+    if (licenseStatusEl) {
+      let isValid = false;
+      if (data.license_status) {
+        try {
+          const statusObj = typeof data.license_status === 'string' ? JSON.parse(data.license_status) : data.license_status;
+          isValid = statusObj && statusObj.valid;
+        } catch (e) {
+          isValid = false;
+        }
+      }
+      if (isValid) {
+        licenseStatusEl.textContent = currentLang === 'si' ? 'සක්‍රීයයි' : 'Active';
+        licenseStatusEl.className = 'badge badge-green';
+      } else {
+        licenseStatusEl.textContent = currentLang === 'si' ? 'අක්‍රීයයි' : 'Inactive';
+        licenseStatusEl.className = 'badge badge-red';
+      }
+    }
+    
     // Webhook Setup
     if (data.META_APP_ID) document.getElementById('set-meta-app-id').value = data.META_APP_ID;
     if (data.META_APP_SECRET) document.getElementById('set-meta-app-secret').placeholder = "••••••••";
@@ -2195,6 +2223,29 @@ async function saveSetting(key, inputId) {
   if (res && res.success) {
     alert(currentLang === 'si' ? 'සාර්ථකව සුරැකුණා!' : 'Saved successfully!');
     document.getElementById(inputId).value = '';
+    loadSettingsUI();
+  }
+}
+
+async function saveLicenseKey() {
+  const val = document.getElementById('set-license-key').value.trim();
+  if (!val) return;
+  
+  // 1. Save license_key
+  const res1 = await apiCall('/api/system/settings', {
+    method: 'POST',
+    body: JSON.stringify({ key: 'license_key', value: val })
+  });
+  
+  if (res1 && res1.success) {
+    // 2. Update license_status to valid since a key is provided
+    const status = { valid: true, activated_at: new Date().toISOString() };
+    await apiCall('/api/system/settings', {
+      method: 'POST',
+      body: JSON.stringify({ key: 'license_status', value: JSON.stringify(status) })
+    });
+    
+    alert(currentLang === 'si' ? 'ලයිසන් එක සාර්ථකව සක්‍රිය කරන ලදී!' : 'License key activated successfully!');
     loadSettingsUI();
   }
 }

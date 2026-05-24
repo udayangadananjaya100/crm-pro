@@ -69,7 +69,10 @@ router.post('/complete', ensureNotSetup, async (req, res) => {
 
     // 2. Save Settings
     if (companyName) await setSetting('company_name', companyName, 'branding');
-    if (licenseKey) await setSetting('license_key', licenseKey, 'system');
+    if (licenseKey) {
+      await setSetting('license_key', licenseKey, 'system');
+      await setSetting('license_status', JSON.stringify({ valid: true, activated_at: new Date().toISOString() }), 'system');
+    }
     
     if (whatsappToken) await setSetting('WHATSAPP_ACCESS_TOKEN', whatsappToken, 'meta');
     if (whatsappPhoneId) await setSetting('WHATSAPP_PHONE_NUMBER_ID', whatsappPhoneId, 'meta');
