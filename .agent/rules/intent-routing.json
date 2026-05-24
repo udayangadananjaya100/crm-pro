@@ -1,20 +1,14 @@
 {
   "version": "2.1.0",
   "intents": {
-    "billing": {
+    "finance": {
       "keywords": {
         "en": [
-          "bill",
-          "payment",
-          "invoice",
-          "receipt",
-          "charge"
+          "pay",
+          "bill"
         ],
         "si": [
-          "ගෙවීම්",
-          "බිල්",
-          "රසීදු",
-          "මුදල්"
+          "ගෙවීම්"
         ]
       },
       "assigned_team": "finance"

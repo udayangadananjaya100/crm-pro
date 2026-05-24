@@ -2030,6 +2030,38 @@ async function registerWebhook() {
   }
 }
 
+async function saveWebhookSettings() {
+  const appId = document.getElementById('set-meta-app-id').value;
+  const appSecret = document.getElementById('set-meta-app-secret').value;
+  const baseUrl = document.getElementById('set-public-url').value;
+  const verifyToken = document.getElementById('set-verify-token').value;
+
+  const isUpdating = document.getElementById('set-meta-app-secret').placeholder === "••••••••";
+
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  try {
+    const updates = [];
+    if (appId) updates.push(apiCall('/api/system/settings', { method: 'POST', body: JSON.stringify({ key: 'META_APP_ID', value: appId }) }));
+    // Only save App Secret if user typed a new value (non-empty)
+    if (appSecret) updates.push(apiCall('/api/system/settings', { method: 'POST', body: JSON.stringify({ key: 'META_APP_SECRET', value: appSecret }) }));
+    if (baseUrl) updates.push(apiCall('/api/system/settings', { method: 'POST', body: JSON.stringify({ key: 'PUBLIC_BASE_URL', value: baseUrl }) }));
+    if (verifyToken) updates.push(apiCall('/api/system/settings', { method: 'POST', body: JSON.stringify({ key: 'WEBHOOK_VERIFY_TOKEN', value: verifyToken }) }));
+
+    await Promise.all(updates);
+    alert(currentLang === 'si' ? 'සාර්ථකව සුරැකුණා!' : 'Saved successfully!');
+    loadSettingsUI();
+  } catch (err) {
+    alert('Failed to save configuration: ' + err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
 async function saveBranding() {
   const companyName = document.getElementById('set-company-name').value;
   const companyLogo = document.getElementById('set-company-logo').value;

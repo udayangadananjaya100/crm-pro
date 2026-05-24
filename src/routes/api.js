@@ -848,6 +848,13 @@ const postSettingsHandler = async (req, res) => {
     const { key, value } = req.body;
     
     if (!key) return res.status(400).json({ error: 'Key required' });
+
+    // Guard: Prevent overwriting sensitive keys with their masked placeholder values (containing '...')
+    const SENSITIVE_KEYS = new Set(['GEMINI_API_KEY', 'WHATSAPP_ACCESS_TOKEN', 'TELEGRAM_BOT_TOKEN', 'MESSENGER_PAGE_TOKEN', 'META_APP_SECRET']);
+    if (SENSITIVE_KEYS.has(key) && typeof value === 'string' && value.includes('...')) {
+      logger.warn(`[Settings Security] Ignored attempt to overwrite sensitive key "${key}" with masked value.`);
+      return res.json({ success: true, message: 'Key unchanged (masked value rejected)' });
+    }
     
     await setSetting(key, value);
     res.json({ success: true });
