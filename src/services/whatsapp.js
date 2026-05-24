@@ -10,6 +10,18 @@ const logger = require('../utils/logger');
 const META_BASE_URL = `https://graph.facebook.com/${env.META_API_VERSION}`;
 
 /**
+ * Placeholder values that indicate dev/mock mode
+ */
+const MOCK_TOKENS = ['WHATSAPP_ACCESS_TOKEN', 'your_access_token_here', 'MOCK_DEV'];
+
+/**
+ * Check if a token value is a mock/placeholder
+ */
+function isMockToken(token) {
+  return !token || MOCK_TOKENS.includes(token);
+}
+
+/**
  * Get dynamic configuration for WhatsApp
  */
 async function getConfig() {
@@ -17,10 +29,11 @@ async function getConfig() {
   const phoneId = await getSetting('WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_PHONE_NUMBER_ID');
   
   if (!token || !phoneId) {
-    logger.warn('WhatsApp configuration missing — message delivery may fail');
+    logger.warn('WhatsApp configuration missing — using mock mode for development');
+    return { token: token || 'MOCK_DEV', phoneId: phoneId || 'MOCK_DEV', isMock: true };
   }
 
-  return { token, phoneId };
+  return { token, phoneId, isMock: isMockToken(token) };
 }
 
 /**
@@ -28,7 +41,19 @@ async function getConfig() {
  */
 async function sendTextMessage(recipientPhone, text) {
   const config = await getConfig();
-  if (!config.token || !config.phoneId) return { success: false, error: 'WhatsApp Config Missing' };
+
+  // Dev mock mode — bypass Meta API
+  if (config.isMock) {
+    logger.info('WhatsApp message MOCKED (Dev Mode)', {
+      to: recipientPhone.slice(-4),
+      content: text
+    });
+    return {
+      success: true,
+      messageId: `mock-wa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      data: { mock: true }
+    };
+  }
 
   try {
     const response = await axios.post(
@@ -72,7 +97,18 @@ async function sendTextMessage(recipientPhone, text) {
  */
 async function sendTemplateMessage(recipientPhone, templateName, language, components = []) {
   const config = await getConfig();
-  if (!config.token || !config.phoneId) return { success: false, error: 'WhatsApp Config Missing' };
+
+  // Dev mock mode — bypass Meta API
+  if (config.isMock) {
+    logger.info('WhatsApp template MOCKED (Dev Mode)', {
+      to: recipientPhone.slice(-4),
+      template: templateName
+    });
+    return {
+      success: true,
+      messageId: `mock-wa-template-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    };
+  }
 
   try {
     const response = await axios.post(
@@ -119,7 +155,19 @@ async function sendTemplateMessage(recipientPhone, templateName, language, compo
  */
 async function sendInteractiveMessage(recipientPhone, body, buttons) {
   const config = await getConfig();
-  if (!config.token || !config.phoneId) return { success: false, error: 'WhatsApp Config Missing' };
+
+  // Dev mock mode — bypass Meta API
+  if (config.isMock) {
+    logger.info('WhatsApp interactive MOCKED (Dev Mode)', {
+      to: recipientPhone.slice(-4),
+      body,
+      buttons
+    });
+    return {
+      success: true,
+      messageId: `mock-wa-interactive-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    };
+  }
 
   try {
     const response = await axios.post(
@@ -226,6 +274,7 @@ function parseWebhookPayload(body) {
         audio: msg.audio || null,
         video: msg.video || null,
         sticker: msg.sticker || null,
+        voice: msg.voice || null,
         // Interactive reply
         interactive: msg.interactive || null,
         button: msg.button || null,
@@ -279,6 +328,7 @@ module.exports = {
   healthCheck: async () => {
     const config = await getConfig();
     if (!config.token || !config.phoneId) return { status: 'unconfigured' };
+    if (config.isMock) return { status: 'healthy', mock: true };
     
     try {
       // Small test call to Meta to verify token

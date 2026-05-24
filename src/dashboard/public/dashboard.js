@@ -83,7 +83,8 @@ const TRANSLATIONS = {
     background_tasks: 'Background Tasks',
     view_all: 'View All',
     view_logs: 'View Logs',
-    search_placeholder: 'Search conversations...'
+    search_placeholder: 'Search conversations...',
+    'flow-builder': 'Flow Builder'
   },
   si: {
     overview: 'දළ විශ්ලේෂණය',
@@ -119,7 +120,8 @@ const TRANSLATIONS = {
     background_tasks: 'පසුබිම් කාර්යයන්',
     view_all: 'සියල්ල බලන්න',
     view_logs: 'ලොග් බලන්න',
-    search_placeholder: 'සංවාද සොයන්න...'
+    search_placeholder: 'සංවාද සොයන්න...',
+    'flow-builder': 'නීති ප්‍රවාහය'
   }
 };
 
@@ -150,6 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshDashboard();
     applyLanguage();
     requestNotificationPermission();
+    checkShiftStatus();
   } else {
     showLogin();
   }
@@ -232,6 +235,7 @@ async function handleLogin(e) {
 
     showDashboard();
     refreshDashboard();
+    checkShiftStatus();
   } catch (err) {
     errorEl.textContent = 'Connection error. Is the server running?';
   } finally {
@@ -394,6 +398,28 @@ function setupRealtimeStream() {
   // Stats trigger
   socket.on('stats:update', () => {
     loadDashboardStats();
+  });
+
+  // Appointment updates
+  socket.on('appointment:update', (data) => {
+    if (currentPage === 'appointments') {
+      loadAppointments();
+    }
+  });
+
+  // Campaign updates
+  socket.on('campaign:update', (data) => {
+    if (currentPage === 'campaigns') {
+      loadCampaigns();
+    }
+    // Show toast for key state transitions to provide premium UX
+    if (data.status === 'completed') {
+      showToast(`📢 Campaign "${data.name}" completed successfully! (${data.sent_count}/${data.total_recipients})`, 'success');
+    } else if (data.status === 'failed') {
+      showToast(`⚠️ Campaign "${data.name}" execution failed!`, 'error');
+    } else if (data.status === 'sending' && data.sent_count === 0) {
+      showToast(`🚀 Campaign "${data.name}" execution started!`, 'info');
+    }
   });
 
   // Notifications
@@ -617,6 +643,7 @@ function navigateTo(page) {
       loadBackups();
       break;
     case 'audit': loadAuditLogs(); break;
+    case 'flow-builder': loadFlowBuilder(); break;
   }
 }
 
@@ -686,7 +713,7 @@ async function loadDashboardStats() {
     animateCounter('stat-contacts', data.active_contacts || 0);
     animateCounter('stat-conversations', data.open_conversations || 0);
     animateCounter('stat-messages', data.today_messages || 0);
-    animateCounter('stat-sla', data.sla_breaches || 0);
+    animateCounter('stat-sla-breaches', data.sla_breaches || 0);
 
     // AI Predictive Analytics Rendering
     if (data.lead_distribution) {
@@ -724,7 +751,7 @@ async function loadDashboardStats() {
               <span style="font-weight:700; font-size:0.8rem; color: var(--text-primary);">${lead.display_name}</span>
               <span class="badge ${lead.lead_score >= 80 ? 'badge-red' : 'badge-orange'}" style="font-size:0.6rem; padding: 1px 6px;">${lead.lead_score} pts</span>
             </div>
-            <div style="font-size:0.7rem; color:var(--text-muted);">${lead.phone}</div>
+            <div style="font-size:0.7rem; color:var(--text-muted);">${lead.phone_number}</div>
             <div style="margin-top:0.4rem; height:4px; background:var(--bg-card); border-radius:2px; overflow:hidden;">
               <div style="width:${lead.lead_score}%; height:100%; background:var(--accent-purple); transition: width 1s;"></div>
             </div>
@@ -798,7 +825,8 @@ async function loadAnalytics() {
     loadAnalyticsVolume(),
     loadAnalyticsFunnel(),
     loadAnalyticsAIMetrics(),
-    loadAnalyticsLeaderboard()
+    loadAnalyticsLeaderboard(),
+    loadAdvancedKPIs()
   ]);
 }
 
@@ -1076,6 +1104,8 @@ async function loadQueueStats() {
 
 // ─── CONVERSATIONS ───
 let activeConversationId = null;
+let activeContactId = null;
+let activeCopilotSuggestion = null;
 
 async function loadConversations() {
   updateBreadcrumbs('Conversations');
@@ -1144,12 +1174,19 @@ async function openChat(id) {
   const current = convList?.conversations?.find(c => c.id === id);
   
   if (current) {
+    activeContactId = current.contact_id;
     document.getElementById('chat-user-name').textContent = current.contact_name || 'Unknown';
     document.getElementById('chat-user-phone').textContent = current.phone_number_masked || '';
     document.getElementById('chat-avatar').textContent = (current.contact_name || 'U')[0].toUpperCase();
     document.getElementById('chat-status-badge').textContent = current.status;
     document.getElementById('chat-status-badge').className = `badge badge-${getStatusColor(current.status)}`;
     document.getElementById('chat-team-badge').textContent = current.assigned_team || '—';
+    
+    // Auto-update copilot suggestion if the panel is open
+    const copilotPanel = document.getElementById('copilot-panel');
+    if (copilotPanel && !copilotPanel.classList.contains('hidden')) {
+      loadCopilotSuggestion();
+    }
   }
 
   loadChatMessages(id);
@@ -1220,15 +1257,7 @@ async function takeoverConversation() {
 
 async function resolveConversation() {
   if (!activeConversationId) return;
-  if (!confirm('Mark this conversation as resolved?')) return;
-  const res = await apiCall(`/api/conversations/${activeConversationId}/close`, {
-    method: 'PATCH',
-    body: JSON.stringify({ notes: 'Resolved by agent' })
-  });
-  if (res) {
-    closeChatPanel();
-    loadConversations();
-  }
+  openCsatModal();
 }
 
 // ─── CONTACTS ───
@@ -1513,7 +1542,7 @@ async function handleSaveAgent(e) {
     let res;
     if (editingAgentId) {
       res = await apiCall(`/api/agents/${editingAgentId}`, {
-        method: 'POST',
+        method: 'PUT',
         body: JSON.stringify({ displayName, role, team, status })
       });
     } else {
@@ -1535,7 +1564,7 @@ async function handleSaveAgent(e) {
 async function toggleAgentStatus(id, currentStatus) {
   const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
   const res = await apiCall(`/api/agents/${id}`, {
-    method: 'POST',
+    method: 'PUT',
     body: JSON.stringify({ status: newStatus })
   });
   if (res) loadAgents();
@@ -1562,6 +1591,10 @@ function switchKBTab(tab) {
 
   if (tab === 'documents') {
     loadKnowledgeDocuments();
+  } else if (tab === 'advanced') {
+    loadAdvancedRules();
+  } else if (tab === 'general') {
+    loadKnowledge();
   }
 }
 
@@ -1589,49 +1622,82 @@ async function loadKnowledge() {
     editor.value = 'Failed to load knowledge base.';
   }
   
-  // Load documents if we are on that tab
   if (currentKBTab === 'documents') {
     loadKnowledgeDocuments();
+  } else if (currentKBTab === 'advanced') {
+    loadAdvancedRules();
+  }
+}
+
+async function loadAdvancedRules() {
+  const data = await apiCall('/api/system/rules/agent');
+  if (data) {
+    if (data.confidence_threshold) {
+      document.getElementById('kb-conf-auto').value = data.confidence_threshold.auto_send;
+      document.getElementById('kb-conf-human').value = data.confidence_threshold.human_review;
+    }
+    if (data.tone_guidelines) {
+      document.getElementById('kb-tone-style').value = data.tone_guidelines.style;
+    }
   }
 }
 
 async function loadKnowledgeDocuments() {
   const tbody = document.getElementById('kb-docs-tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">Loading documents...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">Loading documents...</td></tr>';
 
   const data = await apiCall('/api/knowledge/documents');
   if (!data || !data.documents) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">Failed to load documents</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">Failed to load documents</td></tr>';
     return;
   }
 
   if (data.documents.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">No documents indexed yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">No documents indexed yet.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = data.documents.map(doc => `
+  tbody.innerHTML = data.documents.map(doc => {
+    let titleHTML = `<strong>${doc.title}</strong>`;
+    if (doc.expires_at) {
+      const isExpired = new Date(doc.expires_at) < new Date();
+      titleHTML += `<br><small style="color:${isExpired ? 'red' : 'gray'}">Expires: ${new Date(doc.expires_at).toLocaleDateString()}</small>`;
+    }
+    return `
     <tr>
-      <td><strong>${doc.title}</strong></td>
+      <td>${titleHTML}</td>
+      <td><span class="badge badge-purple">${(doc.category || 'general').toUpperCase()}</span></td>
       <td><span class="badge badge-gray">${doc.doc_type}</span></td>
       <td><span class="badge badge-green">${doc.status}</span></td>
       <td>${doc.total_chunks || 0}</td>
+      <td><span class="badge badge-blue">${doc.usage_count || 0} hits</span></td>
       <td>
+        <button class="btn-icon" onclick="openKnowledgeEditModal('${doc.id}')" style="color:var(--accent-blue); margin-right: 8px;">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+        </button>
         <button class="btn-icon" onclick="handleDeleteKnowledgeDoc('${doc.id}')" style="color:var(--accent-red)">
           <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
         </button>
       </td>
     </tr>
-  `).join('');
+  `}).join('');
 }
 
 async function handleTrainAI() {
   const type = document.getElementById('kb-ingest-type').value;
   const title = document.getElementById('kb-input-title').value;
+  const category = document.getElementById('kb-input-category').value;
+  const expiryRaw = document.getElementById('kb-input-expiry').value;
   const content = document.getElementById('kb-input-content').value;
   const url = document.getElementById('kb-input-url').value;
   const fileInput = document.getElementById('kb-input-file');
   const btn = document.getElementById('btn-train-ai');
+
+  let expiresAt = null;
+  if (expiryRaw) {
+    // End of day
+    expiresAt = new Date(expiryRaw + 'T23:59:59Z').toISOString();
+  }
 
   if (!title || (type === 'text' && !content) || (type === 'website' && !url) || (type === 'file' && !fileInput.files[0])) {
     alert('Please fill in all required fields.');
@@ -1647,16 +1713,18 @@ async function handleTrainAI() {
     if (type === 'text') {
       res = await apiCall('/api/knowledge/upload', {
         method: 'POST',
-        body: JSON.stringify({ title, content })
+        body: JSON.stringify({ title, category, content, expiresAt })
       });
     } else if (type === 'website') {
       res = await apiCall('/api/knowledge/scrape', {
         method: 'POST',
-        body: JSON.stringify({ title, url })
+        body: JSON.stringify({ title, category, url, expiresAt })
       });
     } else if (type === 'file') {
       const formData = new FormData();
       formData.append('title', title);
+      formData.append('category', category);
+      if (expiresAt) formData.append('expiresAt', expiresAt);
       formData.append('file', fileInput.files[0]);
       
       const response = await fetch(`${API_BASE}/api/knowledge/upload-file`, {
@@ -1696,25 +1764,58 @@ async function handleDeleteKnowledgeDoc(id) {
 }
 
 async function handleSaveKnowledge() {
-  const editor = document.getElementById('kb-editor');
   const btn = document.getElementById('kb-save-btn-text');
+  const originalText = btn.textContent;
   
   try {
-    const data = JSON.parse(editor.value);
-    const originalText = btn.textContent;
-    btn.textContent = currentLang === 'si' ? 'සුරකිමින්...' : 'Saving...';
-    
-    const res = await apiCall('/api/system/knowledge', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-    
-    if (res && res.success) {
-      showToast('Configuration saved!', 'success');
+    if (currentKBTab === 'general') {
+      const editor = document.getElementById('kb-editor');
+      const data = JSON.parse(editor.value);
+      btn.textContent = currentLang === 'si' ? 'සුරකිමින්...' : 'Saving...';
+      
+      const res = await apiCall('/api/system/knowledge', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      
+      if (res && res.success) {
+        showToast('Configuration saved!', 'success');
+      }
+    } else if (currentKBTab === 'advanced') {
+      btn.textContent = currentLang === 'si' ? 'සුරකිමින්...' : 'Saving...';
+      
+      // 1. Fetch current agent rules
+      const data = await apiCall('/api/system/rules/agent');
+      if (!data) {
+        throw new Error('Failed to load current agent rules');
+      }
+      
+      // 2. Update threshold and tone style
+      if (!data.confidence_threshold) data.confidence_threshold = {};
+      if (!data.tone_guidelines) data.tone_guidelines = {};
+      
+      data.confidence_threshold.auto_send = parseFloat(document.getElementById('kb-conf-auto').value);
+      data.confidence_threshold.human_review = parseFloat(document.getElementById('kb-conf-human').value);
+      data.tone_guidelines.style = document.getElementById('kb-tone-style').value;
+      
+      // 3. Save back
+      const res = await apiCall('/api/system/rules/agent', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      
+      if (res && res.success) {
+        showToast('Advanced rules saved!', 'success');
+      }
     }
-    btn.textContent = originalText;
   } catch (err) {
-    showToast('Invalid JSON format', 'error');
+    if (currentKBTab === 'general') {
+      showToast('Invalid JSON format', 'error');
+    } else {
+      showToast(err.message || 'Failed to save settings', 'error');
+    }
+  } finally {
+    btn.textContent = originalText;
   }
 }
 
@@ -1739,6 +1840,149 @@ async function loadSettingsUI() {
     if (data.META_APP_SECRET) document.getElementById('set-meta-app-secret').placeholder = "••••••••";
     if (data.PUBLIC_BASE_URL) document.getElementById('set-public-url').value = data.PUBLIC_BASE_URL;
     if (data.WEBHOOK_VERIFY_TOKEN) document.getElementById('set-verify-token').value = data.WEBHOOK_VERIFY_TOKEN;
+
+    // Telegram & FB Messenger Bot Tokens
+    if (data.TELEGRAM_BOT_TOKEN) document.getElementById('set-tg-token').placeholder = data.TELEGRAM_BOT_TOKEN;
+    if (data.MESSENGER_PAGE_TOKEN) document.getElementById('set-msgr-token').placeholder = data.MESSENGER_PAGE_TOKEN;
+  }
+  
+  // Load Canned Responses & Webhooks Settings cards
+  loadCannedResponsesSettings();
+  loadWebhooksSettings();
+  loadWorkspaceRulesSettings();
+  loadComplianceRulesSettings();
+}
+
+async function loadCannedResponsesSettings() {
+  const tbody = document.getElementById('canned-responses-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">Loading canned responses...</td></tr>';
+  
+  const data = await apiCall('/api/canned-responses');
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">No canned responses found.</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td><strong>[${escapeHtml(r.shortcut)}]</strong></td>
+      <td><span class="badge badge-gray">${escapeHtml(r.category || 'General')}</span></td>
+      <td title="${escapeHtml(r.content)}">${escapeHtml(r.content.substring(0, 50))}${r.content.length > 50 ? '...' : ''}</td>
+      <td>
+        <button class="btn btn-link btn-xs" onclick="deleteCannedResponse('${r.id}')" style="color: #ef4444; padding: 0; background: none; border: none; cursor: pointer;">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function addCannedResponse() {
+  const shortcutInput = document.getElementById('canned-shortcut');
+  const categoryInput = document.getElementById('canned-category');
+  const contentInput = document.getElementById('canned-content');
+  
+  const shortcut = shortcutInput?.value.trim();
+  const category = categoryInput?.value.trim() || 'General';
+  const content = contentInput?.value.trim();
+  
+  if (!shortcut || !content) {
+    showToast('Shortcut and Reply Content are required!', 'error');
+    return;
+  }
+  
+  showToast('Creating canned response...', 'info');
+  const res = await apiCall('/api/canned-responses', {
+    method: 'POST',
+    body: JSON.stringify({ shortcut, category, content })
+  });
+  
+  if (res) {
+    showToast('Canned response added!', 'success');
+    if (shortcutInput) shortcutInput.value = '';
+    if (categoryInput) categoryInput.value = '';
+    if (contentInput) contentInput.value = '';
+    loadCannedResponsesSettings();
+    if (typeof loadCannedResponses === 'function') loadCannedResponses();
+  }
+}
+
+async function deleteCannedResponse(id) {
+  if (!confirm('Are you sure you want to delete this canned response?')) return;
+  
+  showToast('Deleting canned response...', 'info');
+  const res = await apiCall(`/api/canned-responses/${id}`, {
+    method: 'DELETE'
+  });
+  
+  if (res) {
+    showToast('Canned response deleted!', 'success');
+    loadCannedResponsesSettings();
+    if (typeof loadCannedResponses === 'function') loadCannedResponses();
+  }
+}
+
+async function loadWebhooksSettings() {
+  const tbody = document.getElementById('webhooks-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="3" class="empty-cell">Loading webhooks...</td></tr>';
+  
+  const data = await apiCall('/api/webhooks');
+  if (!data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-cell">No outgoing webhooks registered.</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = data.map(w => `
+    <tr>
+      <td title="${escapeHtml(w.target_url)}"><code>${escapeHtml(w.target_url)}</code></td>
+      <td><span class="badge badge-gray">${escapeHtml(w.events)}</span></td>
+      <td>
+        <button class="btn btn-link btn-xs" onclick="deleteWebhookSubscription('${w.id}')" style="color: #ef4444; padding: 0; background: none; border: none; cursor: pointer;">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function addWebhookSubscription() {
+  const targetUrlInput = document.getElementById('webhook-target-url');
+  const eventsInput = document.getElementById('webhook-events');
+  const secretInput = document.getElementById('webhook-secret');
+  
+  const targetUrl = targetUrlInput?.value.trim();
+  const events = eventsInput?.value.trim() || '*';
+  const secret = secretInput?.value.trim();
+  
+  if (!targetUrl) {
+    showToast('Target URL is required!', 'error');
+    return;
+  }
+  
+  showToast('Registering webhook...', 'info');
+  const res = await apiCall('/api/webhooks', {
+    method: 'POST',
+    body: JSON.stringify({ targetUrl, events, secret })
+  });
+  
+  if (res) {
+    showToast('Webhook registered successfully!', 'success');
+    if (targetUrlInput) targetUrlInput.value = '';
+    if (eventsInput) eventsInput.value = '';
+    if (secretInput) secretInput.value = '';
+    loadWebhooksSettings();
+  }
+}
+
+async function deleteWebhookSubscription(id) {
+  if (!confirm('Are you sure you want to delete this webhook subscription?')) return;
+  
+  showToast('Deleting webhook...', 'info');
+  const res = await apiCall(`/api/webhooks/${id}`, {
+    method: 'DELETE'
+  });
+  
+  if (res) {
+    showToast('Webhook subscription deleted!', 'success');
+    loadWebhooksSettings();
   }
 }
 
@@ -1882,13 +2126,16 @@ async function restoreBackup() {
 
   const file = fileInput.files[0];
   try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
     const res = await fetch(`${API_BASE}/api/system/restore`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/octet-stream'
+        Authorization: `Bearer ${authToken}`
+        // Do not set Content-Type, fetch will automatically set it to multipart/form-data with the boundary
       },
-      body: file
+      body: formData
     });
     
     const data = await res.json();
@@ -1944,6 +2191,10 @@ async function handleSimulate(e) {
   const bypass = document.getElementById('sim-bypass').checked;
   if (!text) return;
 
+  const customModel = document.getElementById('sim-model').value;
+  const customTemp = parseFloat(document.getElementById('sim-temp').value);
+  const customSystemPrompt = document.getElementById('sim-instruction').value;
+
   const msgList = document.getElementById('sim-messages');
   msgList.innerHTML += `<div class="sim-msg user"><div class="sim-bubble">${text}</div></div>`;
   document.getElementById('sim-text').value = '';
@@ -1951,7 +2202,15 @@ async function handleSimulate(e) {
 
   const res = await apiCall('/api/test/simulate', {
     method: 'POST',
-    body: JSON.stringify({ text, bypassRules: bypass })
+    body: JSON.stringify({ 
+      text, 
+      bypassRules: bypass,
+      aiOverrides: {
+        model: customModel,
+        temperature: customTemp,
+        systemPrompt: customSystemPrompt
+      }
+    })
   });
 
   if (res && res.result) {
@@ -1999,6 +2258,63 @@ async function handleSimulate(e) {
   }
 }
 
+async function exportStatsReport() {
+  try {
+    const data = await apiCall('/api/dashboard/stats');
+    if (!data) {
+      showToast('Failed to export stats: no data received', 'error');
+      return;
+    }
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Metric,Value\n";
+    csvContent += `Active Contacts,${data.active_contacts || 0}\n`;
+    csvContent += `Open Conversations,${data.open_conversations || 0}\n`;
+    csvContent += `Today's Messages,${data.today_messages || 0}\n`;
+    csvContent += `SLA Breaches,${data.sla_breaches || 0}\n`;
+    csvContent += `Lead Temperature - Hot,${data.lead_distribution?.hot || 0}\n`;
+    csvContent += `Lead Temperature - Warm,${data.lead_distribution?.warm || 0}\n`;
+    csvContent += `Lead Temperature - Cold,${data.lead_distribution?.cold || 0}\n`;
+    
+    csvContent += "\nTop High-Value Leads\n";
+    csvContent += "Display Name,Phone Number,Lead Score,Status\n";
+    if (data.top_leads && data.top_leads.length > 0) {
+      data.top_leads.forEach(lead => {
+        csvContent += `"${lead.display_name}","${lead.phone_number}",${lead.lead_score},"${lead.status}"\n`;
+      });
+    } else {
+      csvContent += "No high value leads found,,,\n";
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `procrm_stats_report_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Report exported successfully!', 'success');
+  } catch (err) {
+    showToast(`Export failed: ${err.message}`, 'error');
+  }
+}
+
+async function triggerSLABreachSimulation() {
+  if (!confirm('Are you sure you want to trigger a simulated SLA breach? This will alert managers and create a warning.')) return;
+  try {
+    const res = await apiCall('/api/test/trigger-sla-breach', { method: 'POST' });
+    if (res && res.success) {
+      showToast(res.message || 'SLA breach simulated successfully!', 'success');
+      refreshDashboard();
+      if (typeof loadNotifications === 'function') loadNotifications();
+    } else {
+      showToast(res?.error || 'Failed to trigger simulated SLA breach', 'error');
+    }
+  } catch (err) {
+    showToast(`Simulation failed: ${err.message}`, 'error');
+  }
+}
+
 // ─── BRANDING ───
 function applyBranding(settings) {
   if (!settings) return;
@@ -2038,34 +2354,7 @@ function applyBranding(settings) {
     });
   }
 }
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.style.cssText = `
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-left: 4px solid ${type === 'success' ? 'var(--accent-green)' : type === 'error' ? 'var(--accent-red)' : 'var(--accent-blue)'};
-    color: var(--text-primary);
-    padding: 12px 20px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 250px;
-    animation: toastSlideIn 0.3s ease-out, toastFadeOut 0.3s ease-in 2.7s forwards;
-    pointer-events: auto;
-  `;
-
-  const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
-  toast.innerHTML = `<span>${icon}</span><span style="font-size: 0.9rem; font-weight: 500;">${message}</span>`;
-
-  container.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
-}
+// showToast is already defined above (line ~559). Using that version.
 
 // Add CSS animation for toast
 const style = document.createElement('style');
@@ -2094,10 +2383,85 @@ async function loadAppointments() {
       <td><span style="font-size:0.8rem">${app.reason || 'Not specified'}</span></td>
       <td><span class="badge ${app.status === 'confirmed' ? 'badge-green' : 'badge-orange'}">${app.status}</span></td>
       <td>
-        <button class="btn btn-sm btn-outline">Cancel</button>
+        ${app.status === 'confirmed' ? `<button class="btn btn-sm btn-outline" onclick="cancelAppointment('${app.id}')">Cancel</button>` : ''}
       </td>
     </tr>
   `).join('');
+}
+
+async function cancelAppointment(id) {
+  if (!confirm('Are you sure you want to cancel this appointment?')) return;
+  const res = await apiCall(`/api/appointments/${id}/cancel`, { method: 'POST' });
+  if (res && res.success) {
+    showToast('Appointment cancelled successfully!', 'success');
+    loadAppointments();
+  }
+}
+
+async function showNewAppointmentModal() {
+  // Clear previous inputs
+  document.getElementById('booking-date').value = '';
+  document.getElementById('booking-time').value = '';
+  document.getElementById('booking-reason').value = '';
+  
+  // Load active contacts for selection
+  const selectEl = document.getElementById('booking-contact-id');
+  selectEl.innerHTML = '<option value="">Loading contacts...</option>';
+  
+  const contactsData = await apiCall('/api/contacts?limit=100');
+  if (contactsData && contactsData.contacts) {
+    selectEl.innerHTML = contactsData.contacts.map(c => `
+      <option value="${c.id}" data-name="${escapeHtml(c.display_name)}" data-phone="${escapeHtml(c.phone_number)}">
+        ${escapeHtml(c.display_name)} (${escapeHtml(c.phone_number_masked || c.phone_number)})
+      </option>
+    `).join('');
+  } else {
+    selectEl.innerHTML = '<option value="">Failed to load contacts</option>';
+  }
+  
+  document.getElementById('booking-modal').classList.add('active');
+}
+
+async function handleCreateAppointment() {
+  const contactSelect = document.getElementById('booking-contact-id');
+  const contactId = contactSelect.value;
+  if (!contactId) {
+    showToast('Please select a contact', 'error');
+    return;
+  }
+  
+  const selectedOption = contactSelect.options[contactSelect.selectedIndex];
+  const contactName = selectedOption.getAttribute('data-name');
+  const contactPhone = selectedOption.getAttribute('data-phone');
+  
+  const date = document.getElementById('booking-date').value;
+  const time = document.getElementById('booking-time').value;
+  const reason = document.getElementById('booking-reason').value;
+  
+  if (!date || !time) {
+    showToast('Please select date and time', 'error');
+    return;
+  }
+  
+  const res = await apiCall('/api/appointments', {
+    method: 'POST',
+    body: JSON.stringify({
+      contactId,
+      contactName,
+      contactPhone,
+      date,
+      time,
+      reason
+    })
+  });
+  
+  if (res && res.success) {
+    showToast('Appointment scheduled successfully!', 'success');
+    closeModal('booking-modal');
+    loadAppointments();
+  } else {
+    showToast(res?.error || 'Failed to book appointment', 'error');
+  }
 }
 
 // ─── CAMPAIGNS ───
@@ -2181,7 +2545,6 @@ function closeModal(id) {
 }
 
 // ─── CONTACT DRAWER (PHASE 2) ───
-let activeContactId = null;
 
 async function openContactDetails(contactId) {
   activeContactId = contactId;
@@ -2398,7 +2761,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closePalette();
     closeChatPanel();
-    closeContactDrawer();
+    toggleContactDrawer(false);
   }
 
   // Alt + 1, 2, 3 (Quick Navigation)
@@ -2500,8 +2863,8 @@ document.getElementById('palette-search').addEventListener('input', async (e) =>
     html += `<div class="palette-group"><div class="palette-group-title">Contacts</div>`;
     html += contacts.map(c => renderPaletteItem({
       id: `contact-${c.id}`,
-      title: c.name || c.phone,
-      desc: c.phone,
+      title: c.display_name || c.phone_number_masked,
+      desc: c.phone_number_masked,
       icon: '👤'
     })).join('');
     html += `</div>`;
@@ -2617,6 +2980,15 @@ async function executeBulkAction(action) {
     if (!confirm(`Are you sure you want to delete ${selectedIds.length} contacts?`)) return;
     showToast(`Deleting ${selectedIds.length} contacts...`, 'info');
     // Call batch delete API
+    const res = await apiCall('/api/contacts', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids: selectedIds })
+    });
+    
+    if (res && res.success) {
+      showToast(`Successfully deleted ${selectedIds.length} contacts`, 'success');
+      loadContacts();
+    }
   }
   
   // After action, clear selection
@@ -2648,11 +3020,14 @@ async function confirmScheduleMessage() {
     return;
   }
 
-  const res = await apiCall('/api/scheduled-messages', 'POST', {
-    conversationId: activeConversationId,
-    contactId: null, // Should be fetched from active conversation context
-    content,
-    scheduledFor
+  const res = await apiCall('/api/scheduled-messages', {
+    method: 'POST',
+    body: JSON.stringify({
+      conversationId: activeConversationId,
+      contactId: null, // Should be fetched from active conversation context
+      content,
+      scheduledFor
+    })
   });
 
   if (res) {
@@ -2681,9 +3056,9 @@ async function confirmTransfer() {
     return;
   }
 
-  const res = await apiCall(`/api/conversations/${activeConversationId}/transfer`, 'POST', {
-    team,
-    note
+  const res = await apiCall(`/api/conversations/${activeConversationId}/transfer`, {
+    method: 'POST',
+    body: JSON.stringify({ team, note })
   });
 
   if (res) {
@@ -2693,65 +3068,659 @@ async function confirmTransfer() {
     loadConversations();
   }
 }
-// ─── KNOWLEDGE BASE (PHASE 4) ───
-async function loadKnowledge() {
-  try {
-    const data = await apiCall('/api/system/knowledge');
-    const editor = document.getElementById('kb-editor');
-    if (editor && data) {
-      editor.value = JSON.stringify(data, null, 2);
-    }
-  } catch (err) {
-    console.error('KB load error', err);
-  }
-}
-
-function switchKBTab(tabName) {
-  document.querySelectorAll('.kb-tabs .kb-tab-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('onclick').includes(tabName));
-  });
-  document.querySelectorAll('.kb-tab-content').forEach(content => {
-    content.classList.toggle('active', content.id === `kb-tab-${tabName}`);
-  });
-  
-  if (tabName === 'general') loadKnowledge();
-}
-
-function toggleIngestFields() {
-  const type = document.getElementById('kb-ingest-type').value;
-  document.getElementById('kb-field-url').classList.toggle('hidden', type !== 'website');
-  document.getElementById('kb-field-file').classList.toggle('hidden', type !== 'file');
-  document.getElementById('kb-field-content').classList.toggle('hidden', type === 'file');
-}
-
-async function handleSaveKnowledge() {
-  const editor = document.getElementById('kb-editor');
-  const btn = document.querySelector('[onclick="handleSaveKnowledge()"]');
-  
-  try {
-    const data = JSON.parse(editor.value);
-    btn.disabled = true;
-    showToast('Saving knowledge base...', 'info');
-    
-    const res = await apiCall('/api/system/knowledge', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-    
-    if (res && res.success) {
-      showToast('Knowledge base updated!', 'success');
-      reloadRules();
-    }
-  } catch (err) {
-    showToast('Invalid JSON format in editor', 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
+// NOTE: loadKnowledge, switchKBTab, toggleIngestFields, handleSaveKnowledge
+// are already defined above (Phase 4/5 section). Removed duplicates.
 
 async function reloadRules() {
   await apiCall('/api/system/reload-rules', { method: 'POST' });
 }
+
+
+// ─── ADVANCED FEATURES (Phase 8 UI) ───
+let flowLayout = null;
+let flowRules = null;
+let flowWorkspaceEl = null;
+
+async function loadAdvancedKPIs() {
+  const data = await apiCall('/api/analytics/advanced');
+  if (!data) return;
+
+  const slaBreachEl = document.getElementById('metric-sla-breach');
+  const slaBreachProg = document.getElementById('sla-breach-progress');
+  if (slaBreachEl) slaBreachEl.textContent = `${data.sla_breach_rate}%`;
+  if (slaBreachProg) slaBreachProg.style.width = `${data.sla_breach_rate}%`;
+
+  const avgResponseEl = document.getElementById('metric-avg-response');
+  const avgResponseProg = document.getElementById('avg-response-progress');
+  if (avgResponseEl) avgResponseEl.textContent = `${data.avg_response_time_mins} min`;
+  if (avgResponseProg) {
+    const percentage = Math.min(100, Math.max(0, (data.avg_response_time_mins / 30) * 100));
+    avgResponseProg.style.width = `${percentage}%`;
+  }
+
+  const csatEl = document.getElementById('metric-csat');
+  const csatProg = document.getElementById('csat-progress');
+  if (csatEl) csatEl.textContent = data.avg_csat > 0 ? `${data.avg_csat} / 5` : '0.0 / 5';
+  if (csatProg) {
+    const percentage = data.avg_csat > 0 ? (data.avg_csat / 5) * 100 : 0;
+    csatProg.style.width = `${percentage}%`;
+  }
+}
+
+async function loadFlowBuilder() {
+  updateBreadcrumbs('Flow Builder');
+  flowWorkspaceEl = document.getElementById('flow-workspace');
+  if (!flowWorkspaceEl) return;
+  flowWorkspaceEl.innerHTML = '';
+  
+  const svg = document.getElementById('flow-connections-svg');
+  if (svg) svg.innerHTML = '';
+
+  flowLayout = await apiCall('/api/system/flow-builder');
+  flowRules = await apiCall('/api/system/rules/intentRouting');
+
+  if (!flowRules || !flowRules.intents) {
+    flowWorkspaceEl.innerHTML = '<div class="empty-state"><p>Failed to load intent routing rules</p></div>';
+    return;
+  }
+
+  if (!flowLayout || !flowLayout.nodes || flowLayout.nodes.length === 0) {
+    generateDefaultFlowLayout();
+  }
+
+  renderFlowNodes();
+}
+
+function generateDefaultFlowLayout() {
+  flowLayout = { nodes: [], edges: [] };
+  
+  flowLayout.nodes.push({ id: 'trigger', left: 40, top: 200, type: 'trigger' });
+
+  const intents = Object.keys(flowRules.intents);
+  intents.forEach((intentId, index) => {
+    flowLayout.nodes.push({
+      id: `intent_${intentId}`,
+      left: 320,
+      top: 20 + index * 100,
+      type: 'intent',
+      intentId: intentId
+    });
+  });
+
+  const uniqueTeams = ['sales', 'support', 'finance', 'general_pool'];
+  uniqueTeams.forEach((teamId, index) => {
+    flowLayout.nodes.push({
+      id: `team_${teamId}`,
+      left: 700,
+      top: 100 + index * 120,
+      type: 'team',
+      teamId: teamId
+    });
+  });
+}
+
+function reconcileFlowLayout() {
+  if (!flowLayout) flowLayout = { nodes: [], edges: [] };
+  if (!flowLayout.nodes) flowLayout.nodes = [];
+
+  const activeNodes = [];
+
+  let triggerNode = flowLayout.nodes.find(n => n.id === 'trigger');
+  if (!triggerNode) {
+    triggerNode = { id: 'trigger', left: 40, top: 200, type: 'trigger' };
+  }
+  activeNodes.push(triggerNode);
+
+  const intents = Object.keys(flowRules.intents);
+  intents.forEach((intentId, index) => {
+    let node = flowLayout.nodes.find(n => n.id === `intent_${intentId}`);
+    if (!node) {
+      node = {
+        id: `intent_${intentId}`,
+        left: 320,
+        top: 20 + index * 100,
+        type: 'intent',
+        intentId: intentId
+      };
+    }
+    activeNodes.push(node);
+  });
+
+  const uniqueTeams = ['sales', 'support', 'finance', 'general_pool'];
+  uniqueTeams.forEach((teamId, index) => {
+    let node = flowLayout.nodes.find(n => n.id === `team_${teamId}`);
+    if (!node) {
+      node = {
+        id: `team_${teamId}`,
+        left: 700,
+        top: 100 + index * 120,
+        type: 'team',
+        teamId: teamId
+      };
+    }
+    activeNodes.push(node);
+  });
+
+  flowLayout.nodes = activeNodes;
+}
+
+function renderFlowNodes() {
+  if (!flowWorkspaceEl) return;
+  flowWorkspaceEl.innerHTML = '';
+  
+  reconcileFlowLayout();
+
+  flowLayout.nodes.forEach(node => {
+    let html = '';
+    if (node.type === 'trigger') {
+      html = `
+        <div class="flow-node" id="node-trigger" style="left: ${node.left}px; top: ${node.top}px;">
+          <div class="flow-node-header" style="background: rgba(255,255,255,0.02); height: 36px; padding: 0.5rem 0.75rem;">
+            <span>📥 Webhook Trigger</span>
+          </div>
+          <div class="flow-node-body" style="font-size: 0.75rem; color: var(--text-secondary); padding: 0.75rem;">
+            Ingests inbound WhatsApp, Telegram & FB Messenger messages.
+          </div>
+          <div class="flow-node-port output" style="right: -7px; top: 50%;"></div>
+        </div>
+      `;
+    } else if (node.type === 'intent') {
+      const intentData = flowRules.intents[node.intentId] || {};
+      const keywordsEn = (intentData.keywords_en || []).join(', ');
+      const keywordsSi = (intentData.keywords_si || []).join(', ');
+      const responseEn = (intentData.auto_responses || {}).en || '';
+      const responseSi = (intentData.auto_responses || {}).si || '';
+      const priority = intentData.priority || 'low';
+      const assignedTeam = intentData.assigned_team || 'general_pool';
+
+      html = `
+        <div class="flow-node" id="node-intent_${node.intentId}" style="left: ${node.left}px; top: ${node.top}px; min-height: 120px;">
+          <div class="flow-node-port input" style="left: -7px; top: 50%;"></div>
+          <div class="flow-node-header" style="border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0.5rem 0.75rem;">
+            <span style="font-weight: 700;">Intent: ${node.intentId.toUpperCase()}</span>
+            <button class="btn btn-link btn-xs" onclick="toggleEditIntent('${node.intentId}')" style="color: var(--accent-blue); padding: 0; font-size: 0.75rem; text-decoration: none;">Edit</button>
+          </div>
+          <div class="flow-node-body" style="padding: 0.75rem;">
+            <div class="static-view" id="view-${node.intentId}" style="font-size: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem;">
+              <div><strong>Priority:</strong> <span class="badge badge-gray" style="text-transform: capitalize; padding: 2px 6px; font-size: 0.65rem;">${priority}</span></div>
+              <div class="text-ellipsis" title="${keywordsEn}" style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><strong>Keywords (EN):</strong> ${keywordsEn || '—'}</div>
+              <div class="text-ellipsis" title="${keywordsSi}" style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><strong>Keywords (SI):</strong> ${keywordsSi || '—'}</div>
+              <div><strong>Route to:</strong>
+                <select class="form-input" style="font-size: 0.7rem; padding: 2px 4px; border-radius: 4px; margin-top: 4px; width: 100%; height: auto; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary);" onchange="changeIntentTeam('${node.intentId}', this.value)">
+                  <option value="sales" ${assignedTeam === 'sales' ? 'selected' : ''}>Sales Team</option>
+                  <option value="support" ${assignedTeam === 'support' ? 'selected' : ''}>Support Team</option>
+                  <option value="finance" ${assignedTeam === 'finance' ? 'selected' : ''}>Finance Team</option>
+                  <option value="general_pool" ${assignedTeam === 'general_pool' ? 'selected' : ''}>General Queue</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="edit-view hidden" id="edit-${node.intentId}" style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+              <div style="display: flex; flex-direction: column;">
+                <label style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 2px;">Keywords (EN)</label>
+                <input type="text" class="form-input" id="kw-en-${node.intentId}" value="${keywordsEn}" style="font-size: 0.75rem; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+              </div>
+              <div style="display: flex; flex-direction: column;">
+                <label style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 2px;">Keywords (SI)</label>
+                <input type="text" class="form-input" id="kw-si-${node.intentId}" value="${keywordsSi}" style="font-size: 0.75rem; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+              </div>
+              <div style="display: flex; flex-direction: column;">
+                <label style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 2px;">Auto Response (EN)</label>
+                <textarea class="form-input" id="resp-en-${node.intentId}" rows="2" style="font-size: 0.75rem; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; resize: vertical;">${responseEn}</textarea>
+              </div>
+              <div style="display: flex; flex-direction: column;">
+                <label style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 2px;">Auto Response (SI)</label>
+                <textarea class="form-input" id="resp-si-${node.intentId}" rows="2" style="font-size: 0.75rem; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; resize: vertical;">${responseSi}</textarea>
+              </div>
+              <div style="display: flex; flex-direction: column;">
+                <label style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 2px;">Priority</label>
+                <select class="form-input" id="priority-${node.intentId}" style="font-size: 0.75rem; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">
+                  <option value="low" ${priority === 'low' ? 'selected' : ''}>Low</option>
+                  <option value="medium" ${priority === 'medium' ? 'selected' : ''}>Medium</option>
+                  <option value="high" ${priority === 'high' ? 'selected' : ''}>High</option>
+                </select>
+              </div>
+              <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 4px;">
+                <button class="btn btn-outline btn-xs" onclick="deleteIntent('${node.intentId}')" style="padding: 2px 6px; font-size: 0.7rem; color: #ef4444; border-color: #ef4444;">Delete</button>
+                <button class="btn btn-outline btn-xs" onclick="toggleEditIntent('${node.intentId}')" style="padding: 2px 6px; font-size: 0.7rem;">Cancel</button>
+                <button class="btn btn-primary btn-xs" onclick="applyIntentChanges('${node.intentId}')" style="padding: 2px 6px; font-size: 0.7rem;">Apply</button>
+              </div>
+            </div>
+          </div>
+          <div class="flow-node-port output" style="right: -7px; top: 50%;"></div>
+        </div>
+      `;
+    } else if (node.type === 'team') {
+      let teamName = node.teamId.replace('_', ' ').toUpperCase();
+      let colorClass = node.teamId;
+      let desc = '';
+      if (node.teamId === 'sales') desc = 'Resolves sales, trial & demo inquiries.';
+      else if (node.teamId === 'support') desc = 'Troubleshoots technical issues & errors.';
+      else if (node.teamId === 'finance') desc = 'Handles invoices, billing & payments.';
+      else desc = 'Handles greetings and general catch-all queue.';
+
+      html = `
+        <div class="flow-team-node ${colorClass}" id="node-team_${node.teamId}" style="left: ${node.left}px; top: ${node.top}px;">
+          <div class="flow-node-port input" style="left: -7px; top: 50%;"></div>
+          <div class="flow-team-header" style="height: 36px; padding: 0.5rem 0.75rem;">${teamName} TEAM</div>
+          <div class="flow-team-body" style="font-size: 0.75rem; color: var(--text-secondary); padding: 0.75rem;">
+            ${desc}
+          </div>
+        </div>
+      `;
+    }
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html.trim();
+    const nodeEl = tempDiv.firstChild;
+    flowWorkspaceEl.appendChild(nodeEl);
+
+    makeNodeDraggable(node.id, nodeEl);
+  });
+
+  setTimeout(drawConnections, 50);
+}
+
+function makeNodeDraggable(nodeId, nodeEl) {
+  const header = nodeEl.querySelector('.flow-node-header') || nodeEl.querySelector('.flow-team-header') || nodeEl;
+  header.style.cursor = 'grab';
+  
+  header.onmousedown = function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') {
+      return;
+    }
+    e.preventDefault();
+    header.style.cursor = 'grabbing';
+    
+    const workspaceEl = document.getElementById('flow-workspace');
+    const wsRect = workspaceEl.getBoundingClientRect();
+    
+    let shiftX = e.clientX - nodeEl.getBoundingClientRect().left;
+    let shiftY = e.clientY - nodeEl.getBoundingClientRect().top;
+    
+    function moveAt(clientX, clientY) {
+      let newLeft = clientX - wsRect.left - shiftX;
+      let newTop = clientY - wsRect.top - shiftY;
+      
+      newLeft = Math.max(0, Math.min(newLeft, wsRect.width - nodeEl.offsetWidth));
+      newTop = Math.max(0, Math.min(newTop, wsRect.height - nodeEl.offsetHeight));
+      
+      nodeEl.style.left = newLeft + 'px';
+      nodeEl.style.top = newTop + 'px';
+      
+      const nodeObj = flowLayout.nodes.find(n => n.id === nodeId);
+      if (nodeObj) {
+        nodeObj.left = newLeft;
+        nodeObj.top = newTop;
+      }
+      
+      drawConnections();
+    }
+    
+    function onMouseMove(e) {
+      moveAt(e.clientX, e.clientY);
+    }
+    
+    document.addEventListener('mousemove', onMouseMove);
+    
+    document.onmouseup = function() {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.onmouseup = null;
+      header.style.cursor = 'grab';
+    };
+  };
+  
+  header.ondragstart = function() {
+    return false;
+  };
+}
+
+function getBezierPath(x1, y1, x2, y2) {
+  const controlOffset = Math.abs(x2 - x1) * 0.5;
+  return `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
+}
+
+function drawConnections() {
+  const svg = document.getElementById('flow-connections-svg');
+  if (!svg) return;
+  svg.innerHTML = '';
+
+  const workspaceEl = document.getElementById('flow-workspace');
+  if (!workspaceEl) return;
+  const wsRect = workspaceEl.getBoundingClientRect();
+
+  function getPortPosition(nodeId, isOutput) {
+    const nodeEl = document.getElementById(`node-${nodeId}`);
+    if (!nodeEl) return null;
+    const portEl = nodeEl.querySelector(isOutput ? '.flow-node-port.output' : '.flow-node-port.input');
+    if (!portEl) return null;
+    
+    const portRect = portEl.getBoundingClientRect();
+    return {
+      x: portRect.left - wsRect.left + portRect.width / 2,
+      y: portRect.top - wsRect.top + portRect.height / 2
+    };
+  }
+
+  const triggerPos = getPortPosition('trigger', true);
+  if (triggerPos && flowRules && flowRules.intents) {
+    Object.keys(flowRules.intents).forEach(intentId => {
+      const intentPos = getPortPosition(`intent_${intentId}`, false);
+      if (intentPos) {
+        const pathData = getBezierPath(triggerPos.x, triggerPos.y, intentPos.x, intentPos.y);
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', pathData);
+        path.setAttribute('stroke', '#4b5563');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('fill', 'none');
+        svg.appendChild(path);
+      }
+    });
+  }
+
+  if (flowRules && flowRules.intents) {
+    Object.keys(flowRules.intents).forEach(intentId => {
+      const intentOutPos = getPortPosition(`intent_${intentId}`, true);
+      const assignedTeam = flowRules.intents[intentId].assigned_team;
+      if (intentOutPos && assignedTeam) {
+        const teamInPos = getPortPosition(`team_${assignedTeam}`, false);
+        if (teamInPos) {
+          let color = '#3b82f6';
+          if (assignedTeam === 'support') color = '#f97316';
+          else if (assignedTeam === 'finance') color = '#a855f7';
+          else if (assignedTeam === 'general_pool') color = '#22c55e';
+
+          const pathData = getBezierPath(intentOutPos.x, intentOutPos.y, teamInPos.x, teamInPos.y);
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', pathData);
+          path.setAttribute('stroke', color);
+          path.setAttribute('stroke-width', '2.5');
+          path.setAttribute('fill', 'none');
+          
+          path.setAttribute('stroke-dasharray', '6 4');
+          path.innerHTML = `<animate attributeName="stroke-dashoffset" values="20;0" dur="2s" repeatCount="indefinite" />`;
+
+          svg.appendChild(path);
+        }
+      }
+    });
+  }
+}
+
+function toggleEditIntent(intentId) {
+  const viewEl = document.getElementById(`view-${intentId}`);
+  const editEl = document.getElementById(`edit-${intentId}`);
+  if (viewEl && editEl) {
+    viewEl.classList.toggle('hidden');
+    editEl.classList.toggle('hidden');
+  }
+}
+
+function applyIntentChanges(intentId) {
+  const kwEnInput = document.getElementById(`kw-en-${intentId}`);
+  const kwSiInput = document.getElementById(`kw-si-${intentId}`);
+  const respEnText = document.getElementById(`resp-en-${intentId}`);
+  const respSiText = document.getElementById(`resp-si-${intentId}`);
+  const prioritySelect = document.getElementById(`priority-${intentId}`);
+
+  if (flowRules && flowRules.intents && flowRules.intents[intentId]) {
+    const intent = flowRules.intents[intentId];
+    intent.keywords_en = (kwEnInput?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    intent.keywords_si = (kwSiInput?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    
+    if (!intent.auto_responses) intent.auto_responses = {};
+    intent.auto_responses.en = respEnText?.value.trim() || '';
+    intent.auto_responses.si = respSiText?.value.trim() || '';
+    intent.priority = prioritySelect?.value || 'low';
+
+    showToast(`Updated local parameters for ${intentId}`, 'success');
+    renderFlowNodes();
+  }
+}
+
+function changeIntentTeam(intentId, newTeam) {
+  if (flowRules && flowRules.intents && flowRules.intents[intentId]) {
+    flowRules.intents[intentId].assigned_team = newTeam;
+    drawConnections();
+  }
+}
+
+function addNewIntent() {
+  const newId = prompt('Enter a new Intent ID (e.g., return_policy, pricing):');
+  if (!newId || newId.trim() === '') return;
+  const intentId = newId.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
+  if (flowRules.intents[intentId]) {
+    showToast('An intent with this ID already exists!', 'error');
+    return;
+  }
+
+  // Create default rules for the new intent
+  flowRules.intents[intentId] = {
+    keywords_en: [],
+    keywords_si: [],
+    priority: 'low',
+    assigned_team: 'general_pool',
+    auto_responses: { en: '', si: '' }
+  };
+
+  // Add layout positioning
+  flowLayout.nodes.push({
+    id: `intent_${intentId}`,
+    left: 320,
+    top: 50 + (Object.keys(flowRules.intents).length * 40),
+    type: 'intent',
+    intentId: intentId
+  });
+
+  showToast(`Added new intent: ${intentId}`, 'success');
+  renderFlowNodes();
+}
+
+function deleteIntent(intentId) {
+  if (!confirm(`Are you sure you want to delete the intent "${intentId}"?`)) return;
+  
+  if (flowRules.intents[intentId]) {
+    delete flowRules.intents[intentId];
+  }
+  
+  const nodeIndex = flowLayout.nodes.findIndex(n => n.id === `intent_${intentId}`);
+  if (nodeIndex !== -1) {
+    flowLayout.nodes.splice(nodeIndex, 1);
+  }
+
+  showToast(`Deleted intent: ${intentId}`, 'success');
+  renderFlowNodes();
+}
+
+async function autoGenerateFlow() {
+  const promptText = prompt('Describe your business routing needs (e.g., "I run a hospital. Route emergencies to support, appointments to sales..."):');
+  if (!promptText || promptText.trim() === '') return;
+
+  showToast('AI is generating flow layout. This may take a few seconds...', 'info');
+  
+  const res = await apiCall('/api/system/flow-builder/generate', {
+    method: 'POST',
+    body: JSON.stringify({ prompt: promptText })
+  });
+
+  if (res && res.success && res.rules && res.rules.intents) {
+    if (confirm('Do you want to REPLACE the current flow with the AI generated one? (Cancel to just merge)')) {
+      flowRules.intents = res.rules.intents;
+    } else {
+      flowRules.intents = { ...flowRules.intents, ...res.rules.intents };
+    }
+    
+    showToast('AI Flow generated! Adjust as needed and click Save.', 'success');
+    generateDefaultFlowLayout(); // Reset positions
+    renderFlowNodes();
+  } else {
+    showToast(res?.error || 'Failed to generate flow via AI.', 'error');
+  }
+}
+
+async function generateFlowFromKB() {
+  if (!confirm('This will read your categorized AI Knowledge Hub to generate a dynamic routing flow. This may take 10-20 seconds. Continue?')) return;
+
+  showToast('AI is reading your Knowledge Base and building the flow...', 'info');
+
+  const res = await apiCall('/api/system/flow-builder/generate-from-kb', {
+    method: 'POST'
+  });
+
+  if (res && res.success && res.rules && res.rules.intents) {
+    if (confirm('Do you want to REPLACE the current flow with the Knowledge Base generated flow? (Cancel to just merge)')) {
+      flowRules.intents = res.rules.intents;
+    } else {
+      flowRules.intents = { ...flowRules.intents, ...res.rules.intents };
+    }
+    
+    showToast('Flow successfully generated from Knowledge Base!', 'success');
+    generateDefaultFlowLayout();
+    renderFlowNodes();
+  } else {
+    showToast(res?.error || 'Failed to generate flow from Knowledge Base.', 'error');
+  }
+}
+
+async function saveFlowBuilder() {
+  if (!flowLayout || !flowRules) {
+    showToast('No configurations loaded to save.', 'error');
+    return;
+  }
+
+  showToast('Saving flow layout and rules...', 'info');
+
+  const res = await apiCall('/api/system/flow-builder', {
+    method: 'POST',
+    body: JSON.stringify({
+      layout: flowLayout,
+      compiledRules: flowRules
+    })
+  });
+
+  if (res && res.success) {
+    showToast('Flow Builder configuration saved & compiled rules live!', 'success');
+  } else {
+    showToast('Failed to save Flow Builder configuration.', 'error');
+  }
+}
+
+async function resetFlowLayout() {
+  if (!confirm('Are you sure you want to reset the visual layout positions to default?')) return;
+  generateDefaultFlowLayout();
+  renderFlowNodes();
+  showToast('Layout positions reset', 'info');
+}
+
+// ─── CO-PILOT AI SUGGESTIONS ───
+function toggleCopilot() {
+  const panel = document.getElementById('copilot-panel');
+  if (!panel) return;
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    loadCopilotSuggestion();
+  }
+}
+
+async function loadCopilotSuggestion() {
+  const textEl = document.getElementById('copilot-suggestion-text');
+  const badgeEl = document.getElementById('copilot-sentiment-badge');
+  if (!textEl) return;
+
+  if (!activeConversationId || !activeContactId) {
+    textEl.textContent = 'Select a conversation to load AI suggestions.';
+    if (badgeEl) {
+      badgeEl.textContent = 'Neutral';
+      badgeEl.className = 'badge badge-gray';
+    }
+    activeCopilotSuggestion = null;
+    return;
+  }
+
+  textEl.textContent = 'Generating AI response suggestion... 🤖';
+  if (badgeEl) {
+    badgeEl.textContent = 'Analyzing...';
+    badgeEl.className = 'badge badge-gray';
+  }
+
+  const suggestData = await apiCall(`/api/conversations/${activeConversationId}/copilot-suggest`);
+  const intelData = await apiCall(`/api/contacts/${activeContactId}/intelligence`);
+
+  if (suggestData && suggestData.success && suggestData.suggestion) {
+    textEl.textContent = suggestData.suggestion;
+    activeCopilotSuggestion = suggestData.suggestion;
+  } else {
+    textEl.textContent = 'Failed to generate AI suggestion. Please try again.';
+    activeCopilotSuggestion = null;
+  }
+
+  if (badgeEl) {
+    if (intelData && intelData.sentiment) {
+      const sentiment = intelData.sentiment.toLowerCase();
+      let text = 'Neutral';
+      let className = 'badge badge-gray';
+      if (sentiment === 'positive') {
+        text = 'Positive';
+        className = 'badge badge-green';
+      } else if (sentiment === 'negative') {
+        text = 'Negative';
+        className = 'badge badge-red';
+      }
+      badgeEl.textContent = text;
+      badgeEl.className = className;
+    } else {
+      badgeEl.textContent = 'Neutral';
+      badgeEl.className = 'badge badge-gray';
+    }
+  }
+}
+
+function useCopilotSuggestion() {
+  if (!activeCopilotSuggestion) {
+    showToast('No suggestion available to insert', 'warning');
+    return;
+  }
+  const input = document.getElementById('chat-input');
+  if (input) {
+    input.value = activeCopilotSuggestion;
+    input.focus();
+  }
+}
+
+async function sendCopilotSuggestion() {
+  if (!activeCopilotSuggestion || !activeConversationId) {
+    showToast('No suggestion available to send', 'warning');
+    return;
+  }
+  
+  const text = activeCopilotSuggestion;
+  const res = await apiCall(`/api/conversations/${activeConversationId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ text })
+  });
+
+  if (res && res.success) {
+    showToast('Suggested response sent!', 'success');
+    loadChatMessages(activeConversationId);
+  } else {
+    showToast('Failed to send response', 'error');
+  }
+}
+
+// Bind methods globally
+window.loadAdvancedKPIs = loadAdvancedKPIs;
+window.loadFlowBuilder = loadFlowBuilder;
+window.resetFlowLayout = resetFlowLayout;
+window.saveFlowBuilder = saveFlowBuilder;
+window.toggleEditIntent = toggleEditIntent;
+window.applyIntentChanges = applyIntentChanges;
+window.changeIntentTeam = changeIntentTeam;
+window.toggleCopilot = toggleCopilot;
+window.loadCopilotSuggestion = loadCopilotSuggestion;
+window.useCopilotSuggestion = useCopilotSuggestion;
+window.sendCopilotSuggestion = sendCopilotSuggestion;
+window.drawConnections = drawConnections;
 
 // ─── DATA MANAGEMENT (BACKUPS) ───
 async function loadBackups() {
@@ -2797,7 +3766,22 @@ async function createSystemBackup() {
 }
 
 function downloadDatabase() {
-  window.open(`${API_BASE}/api/system/download-db?token=${authToken}`, '_blank');
+  // Use fetch with proper Authorization header instead of query param
+  fetch(`${API_BASE}/api/system/download-db`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  }).then(res => {
+    if (!res.ok) throw new Error('Download failed');
+    return res.blob();
+  }).then(blob => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `procrm_export_${new Date().toISOString().split('T')[0]}.db`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }).catch(err => showToast('Download failed: ' + err.message, 'error'));
 }
 
 function restoreFromLocalFile() {
@@ -2808,4 +3792,336 @@ function restoreFromLocalFile() {
   }
   
   showToast('Database restore via UI is disabled for security. Use CLI or manual replacement.', 'error');
+}
+
+// ==========================================
+// KNOWLEDGE HUB ENHANCEMENTS
+// ==========================================
+
+// --- Quick Edit ---
+async function openKnowledgeEditModal(docId) {
+  document.getElementById('kb-edit-id').value = docId;
+  const contentArea = document.getElementById('kb-edit-content');
+  contentArea.value = 'Loading...';
+  
+  document.getElementById('kb-edit-modal').classList.remove('hidden');
+
+  const res = await apiCall(`/api/knowledge/documents/${docId}/content`);
+  if (res && res.content) {
+    contentArea.value = res.content;
+  } else {
+    contentArea.value = 'Error loading content. It may be empty.';
+  }
+}
+
+function closeKnowledgeEditModal() {
+  document.getElementById('kb-edit-modal').classList.add('hidden');
+}
+
+async function saveKnowledgeEdit() {
+  const docId = document.getElementById('kb-edit-id').value;
+  const content = document.getElementById('kb-edit-content').value;
+
+  if (!content.trim()) {
+    showToast('Content cannot be empty', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-save-kb-edit');
+  const oldText = btn.innerHTML;
+  btn.innerHTML = 'Saving...';
+  btn.disabled = true;
+
+  const res = await apiCall(`/api/knowledge/documents/${docId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ content })
+  });
+
+  if (res && res.success) {
+    showToast('Document updated successfully!', 'success');
+    closeKnowledgeEditModal();
+    loadKnowledgeDocuments();
+  } else {
+    showToast(res?.error || 'Failed to update document', 'error');
+  }
+
+  btn.innerHTML = oldText;
+  btn.disabled = false;
+}
+
+// --- Playground ---
+function openKbPlaygroundModal() {
+  document.getElementById('kb-playground-modal').classList.remove('hidden');
+}
+
+function closeKbPlaygroundModal() {
+  document.getElementById('kb-playground-modal').classList.add('hidden');
+}
+
+async function testKnowledgeQuery() {
+  const input = document.getElementById('kb-playground-input').value;
+  if (!input.trim()) return;
+
+  const resContainer = document.getElementById('kb-playground-results');
+  const aiRes = document.getElementById('kb-playground-ai-response');
+  const contextRes = document.getElementById('kb-playground-context');
+
+  aiRes.innerHTML = '<span style="color:gray;">Thinking...</span>';
+  contextRes.innerHTML = 'Fetching context...';
+  resContainer.style.display = 'block';
+
+  const res = await apiCall('/api/knowledge/test', {
+    method: 'POST',
+    body: JSON.stringify({ query: input })
+  });
+
+  if (res) {
+    aiRes.innerText = res.answer || 'No valid response from AI.';
+    if (res.chunksInfo && res.chunksInfo.length > 0) {
+      contextRes.innerText = res.chunksInfo.map(c => `[Source: ${c.docTitle} | Score: ${(c.score * 100).toFixed(1)}%]\n${c.content}`).join('\n\n---\n\n');
+    } else {
+      contextRes.innerText = 'No relevant context found in Knowledge Hub.';
+    }
+  } else {
+    aiRes.innerText = 'Error calling test API.';
+    contextRes.innerText = '';
+  }
+}
+
+// ─── SHIFT DUTY LOGGING ───
+let activeShift = null;
+
+async function checkShiftStatus() {
+  const btn = document.getElementById('shift-status-btn');
+  const text = document.getElementById('shift-status-text');
+  const dot = document.getElementById('shift-status-dot');
+  if (!btn || !text || !dot) return;
+
+  const res = await apiCall('/api/shifts/active');
+  if (res && res.shift) {
+    activeShift = res.shift;
+    btn.className = 'status-badge online';
+    text.textContent = 'On Duty';
+    dot.style.background = 'var(--accent-green)';
+    dot.style.animation = 'pulse 2s infinite';
+  } else {
+    activeShift = null;
+    btn.className = 'status-badge offline';
+    text.textContent = 'Off Duty';
+    dot.style.background = '#ef4444';
+    dot.style.animation = 'none';
+  }
+}
+
+async function toggleShift() {
+  if (activeShift) {
+    if (!confirm('Are you sure you want to clock out and end your shift?')) return;
+    showToast('Ending shift...', 'info');
+    const res = await apiCall('/api/shifts/end', { method: 'POST' });
+    if (res) {
+      showToast('Shift ended successfully.', 'success');
+      checkShiftStatus();
+    }
+  } else {
+    const notes = prompt('Enter notes for starting shift (optional):');
+    if (notes === null) return; // cancelled
+    showToast('Starting shift...', 'info');
+    const res = await apiCall('/api/shifts/start', {
+      method: 'POST',
+      body: JSON.stringify({ notes })
+    });
+    if (res) {
+      showToast('Shift started successfully. You are now On Duty.', 'success');
+      checkShiftStatus();
+    }
+  }
+}
+
+// ─── CSAT RATING MODAL HANDLERS ───
+let selectedCsatScore = 0;
+
+function openCsatModal() {
+  selectedCsatScore = 0;
+  document.getElementById('csat-comment').value = '';
+  updateCsatStarsDisplay();
+  const modal = document.getElementById('csat-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeCsatModal() {
+  const modal = document.getElementById('csat-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function setCsatScore(score) {
+  selectedCsatScore = score;
+  updateCsatStarsDisplay();
+}
+
+function updateCsatStarsDisplay() {
+  const stars = document.querySelectorAll('.csat-star');
+  stars.forEach((star, idx) => {
+    if (idx < selectedCsatScore) {
+      star.classList.add('active');
+    } else {
+      star.classList.remove('active');
+    }
+  });
+}
+
+async function submitCsatAndResolve() {
+  if (selectedCsatScore === 0) {
+    showToast('Please select a star rating between 1 and 5!', 'error');
+    return;
+  }
+  
+  const comment = document.getElementById('csat-comment').value.trim();
+  showToast('Saving CSAT rating...', 'info');
+  
+  const csatRes = await apiCall(`/api/conversations/${activeConversationId}/csat`, {
+    method: 'POST',
+    body: JSON.stringify({ score: selectedCsatScore, comment })
+  });
+  
+  if (csatRes) {
+    closeCsatModal();
+    showToast('CSAT saved! Closing conversation...', 'info');
+    const res = await apiCall(`/api/conversations/${activeConversationId}/close`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notes: 'Closed by agent with CSAT feedback' })
+    });
+    if (res) {
+      closeChatPanel();
+      loadConversations();
+      showToast('Conversation closed.', 'success');
+    }
+  }
+}
+
+async function skipCsatAndResolve() {
+  closeCsatModal();
+  showToast('Closing conversation...', 'info');
+  const res = await apiCall(`/api/conversations/${activeConversationId}/close`, {
+    method: 'PATCH',
+    body: JSON.stringify({ notes: 'Closed by agent (CSAT skipped)' })
+  });
+  if (res) {
+    closeChatPanel();
+    loadConversations();
+    showToast('Conversation closed.', 'success');
+  }
+}
+
+// ─── RULES EDITORS HANDLERS ───
+let cachedWorkspaceRules = null;
+let cachedComplianceRules = null;
+
+async function loadWorkspaceRulesSettings() {
+  const data = await apiCall('/api/system/rules/workspace');
+  if (!data) return;
+  cachedWorkspaceRules = data;
+  
+  const enabled = !!(data.business_hours?.enabled);
+  const enabledCheckbox = document.getElementById('rules-hours-enabled');
+  if (enabledCheckbox) {
+    enabledCheckbox.checked = enabled;
+    toggleHoursVisibility(enabled);
+  }
+  
+  const schedule = data.business_hours?.schedule || {};
+  const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const fullDayNames = { mon: 'monday', tue: 'tuesday', wed: 'wednesday', thu: 'thursday', fri: 'friday', sat: 'saturday', sun: 'sunday' };
+  
+  days.forEach(d => {
+    const dayKey = fullDayNames[d];
+    const daySched = schedule[dayKey] || { start: '08:00', end: '20:00' };
+    const startInput = document.getElementById(`hours-${d}-start`);
+    const endInput = document.getElementById(`hours-${d}-end`);
+    if (startInput) startInput.value = daySched.start;
+    if (endInput) endInput.value = daySched.end;
+  });
+}
+
+function toggleHoursVisibility(visible) {
+  const container = document.getElementById('business-hours-schedule-container');
+  if (container) container.style.display = visible ? 'flex' : 'none';
+}
+
+async function saveWorkspaceRules() {
+  if (!cachedWorkspaceRules) return;
+  
+  const enabled = document.getElementById('rules-hours-enabled').checked;
+  cachedWorkspaceRules.business_hours = cachedWorkspaceRules.business_hours || {};
+  cachedWorkspaceRules.business_hours.enabled = enabled;
+  
+  const schedule = {};
+  const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const fullDayNames = { mon: 'monday', tue: 'tuesday', wed: 'wednesday', thu: 'thursday', fri: 'friday', sat: 'saturday', sun: 'sunday' };
+  
+  days.forEach(d => {
+    const dayKey = fullDayNames[d];
+    const start = document.getElementById(`hours-${d}-start`).value || '08:00';
+    const end = document.getElementById(`hours-${d}-end`).value || '20:00';
+    schedule[dayKey] = { start, end };
+  });
+  
+  cachedWorkspaceRules.business_hours.schedule = schedule;
+  
+  showToast('Saving business hours schedule...', 'info');
+  const res = await apiCall('/api/system/rules/workspace', {
+    method: 'POST',
+    body: JSON.stringify(cachedWorkspaceRules)
+  });
+  if (res) {
+    showToast('Workspace rules saved successfully!', 'success');
+  }
+}
+
+async function loadComplianceRulesSettings() {
+  const data = await apiCall('/api/system/rules/compliance');
+  if (!data) return;
+  cachedComplianceRules = data;
+  
+  const pii = data.pii_protection || {};
+  const piiEnabled = document.getElementById('rules-pii-enabled');
+  const piiInbound = document.getElementById('rules-pii-inbound');
+  const piiOutbound = document.getElementById('rules-pii-outbound');
+  if (piiEnabled) piiEnabled.checked = !!pii.enabled;
+  if (piiInbound) piiInbound.checked = !!pii.scan_inbound;
+  if (piiOutbound) piiOutbound.checked = !!pii.scan_outbound;
+  
+  const optOut = data.opt_out || {};
+  const optOutEn = document.getElementById('rules-optout-en');
+  const optOutSi = document.getElementById('rules-optout-si');
+  if (optOutEn) optOutEn.value = (optOut.keywords_en || []).join(', ');
+  if (optOutSi) optOutSi.value = (optOut.keywords_si || []).join(', ');
+  
+  const promptDefense = data.prompt_injection_defense || {};
+  const blockPatterns = document.getElementById('rules-prompt-defense');
+  if (blockPatterns) blockPatterns.value = (promptDefense.block_patterns || []).join(', ');
+}
+
+async function saveComplianceRules() {
+  if (!cachedComplianceRules) return;
+  
+  cachedComplianceRules.pii_protection = cachedComplianceRules.pii_protection || {};
+  cachedComplianceRules.pii_protection.enabled = document.getElementById('rules-pii-enabled').checked;
+  cachedComplianceRules.pii_protection.scan_inbound = document.getElementById('rules-pii-inbound').checked;
+  cachedComplianceRules.pii_protection.scan_outbound = document.getElementById('rules-pii-outbound').checked;
+  
+  cachedComplianceRules.opt_out = cachedComplianceRules.opt_out || {};
+  cachedComplianceRules.opt_out.keywords_en = (document.getElementById('rules-optout-en').value || '').split(',').map(s => s.trim()).filter(Boolean);
+  cachedComplianceRules.opt_out.keywords_si = (document.getElementById('rules-optout-si').value || '').split(',').map(s => s.trim()).filter(Boolean);
+  
+  cachedComplianceRules.prompt_injection_defense = cachedComplianceRules.prompt_injection_defense || {};
+  cachedComplianceRules.prompt_injection_defense.block_patterns = (document.getElementById('rules-prompt-defense').value || '').split(',').map(s => s.trim()).filter(Boolean);
+  
+  showToast('Saving compliance/security settings...', 'info');
+  const res = await apiCall('/api/system/rules/compliance', {
+    method: 'POST',
+    body: JSON.stringify(cachedComplianceRules)
+  });
+  if (res) {
+    showToast('Compliance rules saved successfully!', 'success');
+  }
 }

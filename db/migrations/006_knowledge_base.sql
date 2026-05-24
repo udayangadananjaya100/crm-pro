@@ -1,7 +1,7 @@
 -- Migration: 004_knowledge_base
 -- Purpose: Store documents and their semantic vector chunks for RAG
 
-CREATE TABLE knowledge_documents (
+CREATE TABLE IF NOT EXISTS knowledge_documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title TEXT NOT NULL,
     filename TEXT,
@@ -14,7 +14,7 @@ CREATE TABLE knowledge_documents (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE knowledge_chunks (
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     document_id UUID REFERENCES knowledge_documents(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
@@ -25,4 +25,4 @@ CREATE TABLE knowledge_chunks (
 );
 
 -- Index for faster lookup by document
-CREATE INDEX idx_knowledge_chunks_doc ON knowledge_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(document_id);

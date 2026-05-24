@@ -37,6 +37,8 @@ function matchIntent(messageText) {
     const allKeywords = [
       ...(intentConfig.keywords_en || []),
       ...(intentConfig.keywords_si || []),
+      ...(intentConfig.keywords?.en || []),
+      ...(intentConfig.keywords?.si || []),
     ];
 
     const matchedKeywords = allKeywords.filter((kw) => text.includes(kw.toLowerCase()));

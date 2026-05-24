@@ -44,7 +44,7 @@ async function checkSLABreaches() {
         
         // Mark as breached and upgrade priority
         await query(
-          "UPDATE conversations SET sla_breached = 1, priority = 'high' WHERE id = $1", 
+          "UPDATE conversations SET sla_breached = 1, priority = CASE WHEN priority IN ('urgent', 'critical') THEN priority ELSE 'high' END WHERE id = $1", 
           [conv.id]
         );
         

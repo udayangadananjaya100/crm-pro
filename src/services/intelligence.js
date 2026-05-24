@@ -22,7 +22,7 @@ async function getContactIntelligence(contactId) {
     // Aggregate messages
     let allMessages = [];
     for (const conv of conversations.conversations || []) {
-      const msgs = await conversationService.getMessages(conv.id);
+      const msgs = await conversationService.getConversationHistory(conv.id, 50);
       allMessages = [...allMessages, ...msgs];
     }
 
@@ -60,7 +60,8 @@ async function getContactIntelligence(contactId) {
       tags: [...new Set(tags)],
       sentiment: analyzeSentiment(allMessages.filter(m => m.direction === 'inbound').map(m => m.content).join(' ')),
       interactionCount: allMessages.length,
-      lastInteraction: contact.last_message_at
+      lastInteraction: contact.last_message_at,
+      lead_score: contact.lead_score
     };
   } catch (err) {
     logger.error('Intelligence generation error', { error: err.message });
@@ -88,7 +89,7 @@ async function getContactTimeline(contactId) {
     });
 
     for (const conv of conversations.conversations || []) {
-      const messages = await conversationService.getMessages(conv.id);
+      const messages = await conversationService.getConversationHistory(conv.id, 50);
       
       messages.forEach(msg => {
         timeline.push({

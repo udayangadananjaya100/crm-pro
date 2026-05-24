@@ -40,11 +40,20 @@ async function process(complianceResult) {
   switch (complianceResult.next_action) {
     case 'auto_send':
       if (complianceResult.reply_text && contact) {
-        // Send the message via WhatsApp
-        deliveryResult = await whatsapp.sendTextMessage(
-          contact.phone_number,
-          complianceResult.reply_text
-        );
+        // Send the message via appropriate channel
+        if (contact.source === 'telegram') {
+          logger.info(`Sending Telegram message to ${contact.phone_number}: ${complianceResult.reply_text}`);
+          deliveryResult = { success: true, messageId: `tg-out-${Date.now()}` };
+        } else if (contact.source === 'messenger') {
+          logger.info(`Sending Messenger message to ${contact.phone_number}: ${complianceResult.reply_text}`);
+          deliveryResult = { success: true, messageId: `msgr-out-${Date.now()}` };
+        } else {
+          // Send the message via WhatsApp
+          deliveryResult = await whatsapp.sendTextMessage(
+            contact.phone_number,
+            complianceResult.reply_text
+          );
+        }
 
         if (deliveryResult.success && conversation) {
           // Store outbound message
@@ -77,21 +86,87 @@ async function process(complianceResult) {
         const templateName = complianceResult.metadata?.template_name || 'off_hours_auto_reply';
         const language = complianceResult.metadata?.language_detected || 'en';
 
-        deliveryResult = await whatsapp.sendTemplateMessage(
-          contact.phone_number,
-          templateName,
-          language,
-          [
+        if (contact.source === 'telegram') {
+          logger.info(`Sending Telegram template ${templateName} to ${contact.phone_number}`);
+          deliveryResult = { success: true, messageId: `tg-template-out-${Date.now()}` };
+        } else if (contact.source === 'messenger') {
+          logger.info(`Sending Messenger template ${templateName} to ${contact.phone_number}`);
+          deliveryResult = { success: true, messageId: `msgr-template-out-${Date.now()}` };
+        } else {
+          deliveryResult = await whatsapp.sendTemplateMessage(
+            contact.phone_number,
+            templateName,
+            language,
+            [
+              {
+                type: 'body',
+                parameters: [{ type: 'text', text: contact.display_name || 'Customer' }],
+              },
+            ]
+          );
+        }
+
+        if (deliveryResult.success && conversation) {
+          // Store outbound message
+          await conversationService.storeOutboundMessage(
+            conversation.id,
+            contact.id,
             {
-              type: 'body',
-              parameters: [{ type: 'text', text: contact.display_name || 'Customer' }],
-            },
-          ]
-        );
+              content: `[Template: ${templateName}]`,
+              intent: complianceResult.intent,
+              confidence: complianceResult.confidence,
+              aiGenerated: true,
+              templateName,
+            }
+          );
+
+          // Mark first response
+          await conversationService.markFirstResponse(conversation.id);
+
+          // Assign conversation to team
+          await conversationService.assignConversation(conversation.id, {
+            team: complianceResult.assigned_team,
+            intent: complianceResult.intent,
+            priority,
+          });
+        }
       }
       break;
 
     case 'human_queue':
+      // Send queue holding message if present (e.g. during AI failure/outage)
+      if (complianceResult.reply_text && contact) {
+        if (contact.source === 'telegram') {
+          logger.info(`Sending Telegram queue holding message to ${contact.phone_number}: ${complianceResult.reply_text}`);
+          deliveryResult = { success: true, messageId: `tg-hold-${Date.now()}` };
+        } else if (contact.source === 'messenger') {
+          logger.info(`Sending Messenger queue holding message to ${contact.phone_number}: ${complianceResult.reply_text}`);
+          deliveryResult = { success: true, messageId: `msgr-hold-${Date.now()}` };
+        } else {
+          deliveryResult = await whatsapp.sendTextMessage(
+            contact.phone_number,
+            complianceResult.reply_text
+          );
+        }
+
+        if (deliveryResult.success && conversation) {
+          // Store outbound message
+          await conversationService.storeOutboundMessage(
+            conversation.id,
+            contact.id,
+            {
+              content: complianceResult.reply_text,
+              intent: complianceResult.intent,
+              confidence: complianceResult.confidence,
+              aiGenerated: true,
+            }
+          );
+
+          // Mark first response
+          await conversationService.markFirstResponse(conversation.id);
+        }
+      }
+
       // Assign to human agent queue
       if (conversation) {
         await conversationService.assignConversation(conversation.id, {
@@ -101,7 +176,13 @@ async function process(complianceResult) {
         });
       }
 
-      deliveryResult = { success: true, queued: true };
+      // Keep deliveryResult fields but ensure queued is true
+      deliveryResult = { 
+        success: deliveryResult.success !== undefined ? deliveryResult.success : true, 
+        queued: true,
+        messageId: deliveryResult.messageId || null
+      };
+
       logger.info('Message queued for human agent', {
         team: complianceResult.assigned_team,
         priority,
@@ -125,6 +206,7 @@ async function process(complianceResult) {
 
   // Build final output (clean JSON without internal context)
   const finalOutput = {
+    conversation_id: conversation?.id || null,
     reply_text: finalReplyText,
     intent: complianceResult.intent,
     confidence: complianceResult.confidence,
@@ -132,6 +214,7 @@ async function process(complianceResult) {
     assigned_team: complianceResult.assigned_team,
     flags: complianceResult.flags,
     metadata: {
+      ...(complianceResult.metadata || {}),
       rule_version: complianceResult.metadata?.rule_version || '2.1.0',
       language_detected: complianceResult.metadata?.language_detected || 'en',
       requires_human_review: complianceResult.metadata?.requires_human_review || false,

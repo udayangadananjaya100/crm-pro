@@ -144,7 +144,7 @@ async function process(orchestratorResult) {
 
   return {
     ...orchestratorResult,
-    reply_text: modifiedReply || orchestratorResult.reply_text,
+    reply_text: modifiedReply !== null ? modifiedReply : '',
     next_action: nextAction,
     flags,
     compliant,

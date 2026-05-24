@@ -13,9 +13,10 @@ const logger = require('../utils/logger');
 /**
  * Main orchestrator processing
  */
-async function process({ messageData, preFilterResult }) {
+async function process({ messageData, preFilterResult, options = {} }) {
   const startTime = Date.now();
   const flags = [...(preFilterResult.flags || [])];
+  const aiOverrides = options.aiOverrides || {};
 
   logger.info('Orchestrator agent processing', {
     from: messageData.from?.slice(-4),
@@ -27,7 +28,7 @@ async function process({ messageData, preFilterResult }) {
 
   // 1. Find or create contact
   const contact = preFilterResult.contact ||
-    await contactService.findOrCreateContact(messageData.from, messageData.contactName);
+    await contactService.findOrCreateContact(messageData.from, messageData.contactName, messageData.source || 'whatsapp');
 
   // 2. Handle opt-out
   if (preFilterResult.action === 'opt_out') {
@@ -56,6 +57,18 @@ async function process({ messageData, preFilterResult }) {
   // 8. Detect intent
   const intentResult = matchIntent(messageData.text || '');
 
+  // AI Sentiment & Emotion Analysis
+  let sentimentResult = { sentiment: 'neutral', confidence: 1.0 };
+  if (messageData.text) {
+    try {
+      const { analyzeSentimentAI } = require('../services/gemini');
+      sentimentResult = await analyzeSentimentAI(messageData.text);
+      logger.info('🔮 AI Sentiment analyzed:', sentimentResult);
+    } catch (e) {
+      logger.error('Failed to analyze sentiment with Gemini:', e.message);
+    }
+  }
+
   // 9. Update lead score for new contacts
   if (flags.includes('new_contact')) {
     await contactService.updateLeadScore(contact.id, 10);
@@ -65,6 +78,7 @@ async function process({ messageData, preFilterResult }) {
   let replyText = '';
   let confidence = intentResult.confidence;
   let aiSuccess = true;
+  let modelUsed = 'keyword_matching';
 
   // If high confidence keyword match, use auto-response
   if (intentResult.confidence >= 0.9 && intentResult.source === 'keyword') {
@@ -73,6 +87,7 @@ async function process({ messageData, preFilterResult }) {
 
   // If no auto-response or need AI enhancement, use Gemini
   if (!replyText) {
+    modelUsed = aiOverrides.model || agentRules?.ai_config?.model || "gemini-1.5-flash";
     const history = await conversationService.getConversationHistory(conversation.id, 10);
     
     // Check for media (Image or Audio Analysis)
@@ -96,9 +111,6 @@ async function process({ messageData, preFilterResult }) {
       }
     }
 
-    const { findRelevantContext } = require('../services/knowledge');
-    const kbContext = await findRelevantContext(messageData.text || (mediaData ? 'Analyze image' : ''), 2);
-
     const aiResult = await generateResponse({
       messageText: messageData.text,
       conversationHistory: history,
@@ -109,7 +121,8 @@ async function process({ messageData, preFilterResult }) {
       context: {
         contactId: contact.id,
         contactPhone: contact.phone_number,
-      }
+      },
+      aiOverrides: aiOverrides
     });
 
     if (aiResult.success) {
@@ -118,6 +131,11 @@ async function process({ messageData, preFilterResult }) {
       aiSuccess = false;
       flags.push('ai_error');
       logger.error('AI generation failed in orchestrator');
+      if (lang.language === 'si' || lang.language === 'mixed') {
+        replyText = 'අපගේ AI සහකාර සේවාව තාවකාලිකව ක්‍රියාවිරහිත වී ඇත. ඔබව අපගේ පාරිභෝගික සහාය නියෝජිතයෙකු වෙත යොමු කෙරේ. කරුණාකර මොහොතක් රැඳී සිටින්න.';
+      } else {
+        replyText = 'Our AI assistant is temporarily unavailable. We are connecting you to a human agent immediately. Please wait a moment.';
+      }
     }
   }
 
@@ -157,15 +175,27 @@ async function process({ messageData, preFilterResult }) {
     logger.debug('Lead score adjusted', { contact: contact.id, adjustment: scoreAdjustment, intent: intentResult.intent });
   }
 
-  // 14. Check flags for labels
-  if (intentResult.sentiment?.angry) flags.push('angry_customer');
-  if (intentResult.sentiment?.urgent) flags.push('urgent_request');
+  // 14. Check flags for labels and update conversation priority
+  const isAngry = intentResult.sentiment?.angry || sentimentResult.sentiment === 'angry' || sentimentResult.sentiment === 'frustrated';
+  const isUrgent = intentResult.sentiment?.urgent || sentimentResult.sentiment === 'urgent';
+
+  if (isAngry) {
+    if (!flags.includes('angry_customer')) flags.push('angry_customer');
+    await conversationService.updateConversationPriority(conversation.id, 'critical');
+  } else if (isUrgent) {
+    if (!flags.includes('urgent_request')) flags.push('urgent_request');
+    await conversationService.updateConversationPriority(conversation.id, 'urgent');
+  }
 
   // 14. Determine next action
   let nextAction = 'auto_send';
   let requiresHumanReview = false;
 
   if (!aiSuccess) {
+    nextAction = 'human_queue';
+    requiresHumanReview = true;
+  } else if (isAngry || isUrgent) {
+    // Escalate to human queue immediately on angry/urgent emotion
     nextAction = 'human_queue';
     requiresHumanReview = true;
   } else if (confidence < (agentRules?.confidence_threshold?.human_review || 0.5)) {
@@ -176,10 +206,12 @@ async function process({ messageData, preFilterResult }) {
   }
 
   // Check conversational window
-  const withinWindow = await conversationService.isWithinWindow(conversation.id);
+  const withinWindow = !conversation._was_outside_window;
   if (!withinWindow) {
-    nextAction = 'template_required';
     flags.push('outside_24h_window');
+    if (nextAction === 'auto_send') {
+      nextAction = 'template_required';
+    }
   }
 
   const assignedTeam = getAssignedTeam(intentResult.intent);
@@ -196,8 +228,9 @@ async function process({ messageData, preFilterResult }) {
       language_detected: lang.language,
       requires_human_review: requiresHumanReview,
       matched_keywords: intentResult.matched_keywords || [],
-      sentiment: intentResult.sentiment,
+      sentiment: sentimentResult.sentiment || (intentResult.sentiment?.angry ? 'angry' : intentResult.sentiment?.urgent ? 'urgent' : 'neutral'),
       ai_success: aiSuccess,
+      model_used: modelUsed,
     },
     // Internal context (not sent to WhatsApp)
     _context: {
@@ -214,10 +247,11 @@ async function process({ messageData, preFilterResult }) {
 async function handleOptOut(contact, messageData) {
   const compliance = getRules('compliance');
   const lang = detectLanguage(messageData.text || '');
+  let conversation = null;
 
   // Store the inbound message before processing opt-out
   if (contact) {
-    const conversation = await conversationService.findOrCreateConversation(contact.id);
+    conversation = await conversationService.findOrCreateConversation(contact.id);
     await conversationService.storeInboundMessage(conversation.id, contact.id, messageData);
     await contactService.optOutContact(contact.id, messageData.text);
   }
@@ -239,7 +273,7 @@ async function handleOptOut(contact, messageData) {
       language_detected: lang.language,
       requires_human_review: false,
     },
-    _context: { contact },
+    _context: { contact, conversation },
   };
 }
 
@@ -248,8 +282,11 @@ async function handleOptOut(contact, messageData) {
  */
 async function handleResubscribe(contact, messageData) {
   const lang = detectLanguage(messageData.text || '');
+  let conversation = null;
 
   if (contact) {
+    conversation = await conversationService.findOrCreateConversation(contact.id);
+    await conversationService.storeInboundMessage(conversation.id, contact.id, messageData);
     await contactService.optInContact(contact.id, messageData.text);
   }
 
@@ -270,7 +307,7 @@ async function handleResubscribe(contact, messageData) {
       language_detected: lang.language,
       requires_human_review: false,
     },
-    _context: { contact },
+    _context: { contact, conversation },
   };
 }
 

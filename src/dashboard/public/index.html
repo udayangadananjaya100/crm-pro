@@ -152,6 +152,10 @@
                     <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
                     <span id="nav-knowledge-text">Knowledge Base</span>
                 </a>
+                <a href="#" class="nav-item" data-page="flow-builder" onclick="navigateTo('flow-builder')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/><circle cx="10" cy="8" r="2"/></svg>
+                    <span>Flow Builder</span>
+                </a>
                 <a href="#" class="nav-item" data-page="settings" onclick="navigateTo('settings')">
                     <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
                     <span id="nav-settings-text">Settings</span>
@@ -183,6 +187,10 @@
                         <span class="status-dot"></span>
                         <span id="system-status-text">System Online</span>
                     </div>
+                    <button class="status-badge offline" id="shift-status-btn" onclick="toggleShift()" style="border: none; cursor: pointer; transition: all 0.2s; font-family: inherit;">
+                        <span class="status-dot" id="shift-status-dot" style="animation: none;"></span>
+                        <span id="shift-status-text">Off Duty</span>
+                    </button>
                     <div class="lang-toggle">
                         <button class="lang-btn active" data-lang="en" onclick="switchLanguage('en')">EN</button>
                         <button class="lang-btn" data-lang="si" onclick="switchLanguage('si')">සිං</button>
@@ -841,6 +849,17 @@
                                             <input type="text" id="kb-input-title" placeholder="e.g. Refund Policy 2026" class="form-input">
                                         </div>
 
+                                        <div class="form-group" style="display:flex; gap:10px;">
+                                            <div style="flex:1;">
+                                                <label>Category</label>
+                                                <input type="text" id="kb-input-category" placeholder="e.g. packages" class="form-input" value="general">
+                                            </div>
+                                            <div style="flex:1;">
+                                                <label>Expires At (Optional)</label>
+                                                <input type="date" id="kb-input-expiry" class="form-input">
+                                            </div>
+                                        </div>
+
                                         <div id="kb-field-url" class="form-group hidden">
                                             <label>Website URL</label>
                                             <input type="text" id="kb-input-url" placeholder="https://yourbusiness.com/about" class="form-input">
@@ -876,14 +895,16 @@
                                             <thead>
                                                 <tr>
                                                     <th>Title</th>
+                                                    <th>Category</th>
                                                     <th>Type</th>
                                                     <th>Status</th>
                                                     <th>Chunks</th>
+                                                    <th>Usage</th>
                                                     <th>Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="kb-docs-tbody">
-                                                <tr><td colspan="5" class="empty-cell">No documents indexed yet.</td></tr>
+                                                <tr><td colspan="7" class="empty-cell">No documents indexed yet.</td></tr>
                                             </tbody>
                                         </table>
                                     </div>
@@ -1177,6 +1198,252 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Canned Responses (Quick Templates) -->
+                        <div class="card">
+                            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3>Canned Responses</h3>
+                                <div class="badge badge-blue">Agent</div>
+                            </div>
+                            <div class="card-body">
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">
+                                    Create quick replies that agents can select from the template dropdown in the chat pane.
+                                </p>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <input type="text" id="canned-shortcut" placeholder="Shortcut (e.g. /greet)" class="form-input" style="flex: 1;">
+                                        <input type="text" id="canned-category" placeholder="Category" class="form-input" style="flex: 1;">
+                                    </div>
+                                    <input type="text" id="canned-content" placeholder="Reply Content text" class="form-input">
+                                    <button class="btn btn-primary btn-sm" onclick="addCannedResponse()">Add Template</button>
+                                </div>
+                                <div class="table-container" style="max-height: 200px; overflow-y: auto;">
+                                    <table class="data-table" style="font-size: 0.8rem;">
+                                        <thead>
+                                            <tr>
+                                                <th>Shortcut</th>
+                                                <th>Category</th>
+                                                <th>Content</th>
+                                                <th style="width: 50px;">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="canned-responses-tbody">
+                                            <tr><td colspan="4" class="empty-cell">Loading canned responses...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Custom Outbound Webhooks -->
+                        <div class="card">
+                            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3>Custom Outbound Webhooks</h3>
+                                <div class="badge badge-purple">Admin</div>
+                            </div>
+                            <div class="card-body">
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">
+                                    Deliver events (messages, status updates) to external webhooks (e.g., Zapier, Make).
+                                </p>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; padding: 1rem; background: var(--bg-hover); border-radius: 8px;">
+                                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                                        <label style="font-size: 0.75rem;">Target URL</label>
+                                        <input type="text" id="webhook-target-url" placeholder="https://api.zapier.com/hooks/..." class="form-input">
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                        <div class="form-group" style="margin-bottom: 0.5rem;">
+                                            <label style="font-size: 0.75rem;">Events (e.g. *, contact.created)</label>
+                                            <input type="text" id="webhook-events" placeholder="message.received, *" class="form-input">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0.5rem;">
+                                            <label style="font-size: 0.75rem;">Secret Token (optional)</label>
+                                            <input type="text" id="webhook-secret" placeholder="signature_secret" class="form-input">
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-primary btn-sm" onclick="addWebhookSubscription()">Register Webhook</button>
+                                </div>
+                                <div class="table-container" style="max-height: 200px; overflow-y: auto;">
+                                    <table class="data-table" style="font-size: 0.8rem;">
+                                        <thead>
+                                            <tr>
+                                                <th>Target URL</th>
+                                                <th>Events</th>
+                                                <th style="width: 50px;">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="webhooks-tbody">
+                                            <tr><td colspan="3" class="empty-cell">Loading webhooks...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Telegram & FB Messenger Bot Integrations -->
+                        <div class="card">
+                            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3>Telegram & FB Messenger</h3>
+                                <div class="badge badge-blue">Multi-channel</div>
+                            </div>
+                            <div class="card-body">
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">
+                                    Configure bot integration tokens for routing customer messages from Telegram and FB Messenger.
+                                </p>
+                                <div class="form-group">
+                                    <label>Telegram Bot Token</label>
+                                    <input type="password" id="set-tg-token" placeholder="TELEGRAM_BOT_TOKEN" class="form-input" autocomplete="new-password">
+                                </div>
+                                <div class="form-group">
+                                    <label>Facebook Messenger Page Token</label>
+                                    <input type="password" id="set-msgr-token" placeholder="MESSENGER_PAGE_TOKEN" class="form-input" autocomplete="new-password">
+                                </div>
+                                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="saveSetting('TELEGRAM_BOT_TOKEN', 'set-tg-token')">Save Telegram</button>
+                                    <button class="btn btn-primary btn-sm" onclick="saveSetting('MESSENGER_PAGE_TOKEN', 'set-msgr-token')">Save Messenger</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Workspace Rules & Business Hours -->
+                        <div class="card">
+                            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3>Business Hours & SLA</h3>
+                                <div class="badge badge-purple">Admin</div>
+                            </div>
+                            <div class="card-body">
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">
+                                    Toggle business hours and define Monday–Sunday schedules for customer auto-replies.
+                                </p>
+                                <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
+                                    <input type="checkbox" id="rules-hours-enabled" onchange="toggleHoursVisibility(this.checked)" style="width:16px; height:16px;">
+                                    <label for="rules-hours-enabled" style="margin-bottom: 0; font-weight: 600;">Enable Business Hours Filter</label>
+                                </div>
+                                <div id="business-hours-schedule-container" style="display: none; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                        <span style="font-weight:600; width: 80px;">Monday</span>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="time" id="hours-mon-start" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                            <span>to</span>
+                                            <input type="time" id="hours-mon-end" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                        <span style="font-weight:600; width: 80px;">Tuesday</span>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="time" id="hours-tue-start" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                            <span>to</span>
+                                            <input type="time" id="hours-tue-end" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                        <span style="font-weight:600; width: 80px;">Wednesday</span>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="time" id="hours-wed-start" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                            <span>to</span>
+                                            <input type="time" id="hours-wed-end" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                        <span style="font-weight:600; width: 80px;">Thursday</span>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="time" id="hours-thu-start" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                            <span>to</span>
+                                            <input type="time" id="hours-thu-end" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                        <span style="font-weight:600; width: 80px;">Friday</span>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="time" id="hours-fri-start" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                            <span>to</span>
+                                            <input type="time" id="hours-fri-end" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                        <span style="font-weight:600; width: 80px;">Saturday</span>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="time" id="hours-sat-start" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                            <span>to</span>
+                                            <input type="time" id="hours-sat-end" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                        <span style="font-weight:600; width: 80px;">Sunday</span>
+                                        <div style="display:flex; gap:5px; align-items:center;">
+                                            <input type="time" id="hours-sun-start" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                            <span>to</span>
+                                            <input type="time" id="hours-sun-end" class="form-input" style="padding: 2px 5px; width: 90px; height: auto;">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-actions" style="display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="saveWorkspaceRules()">Save Schedule</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Compliance & Security Rules -->
+                        <div class="card">
+                            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3>Compliance & PII Protection</h3>
+                                <div class="badge badge-purple">Admin</div>
+                            </div>
+                            <div class="card-body">
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:1rem;">
+                                    Enforce GDPR rules, filter sensitive PII from logs, and defend against AI prompt injection.
+                                </p>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <input type="checkbox" id="rules-pii-enabled" style="width:16px; height:16px;">
+                                        <label for="rules-pii-enabled" style="margin-bottom:0; font-size:0.8rem; font-weight:600;">Enable PII Redaction/Masking</label>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 10px; padding-left: 1.5rem;">
+                                        <input type="checkbox" id="rules-pii-inbound" style="width:14px; height:14px;">
+                                        <label for="rules-pii-inbound" style="margin-bottom:0; font-size:0.75rem;">Scan Inbound Messages</label>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 10px; padding-left: 1.5rem;">
+                                        <input type="checkbox" id="rules-pii-outbound" style="width:14px; height:14px;">
+                                        <label for="rules-pii-outbound" style="margin-bottom:0; font-size:0.75rem;">Scan Outbound Replies</label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-size: 0.75rem;">Opt-out Keywords (English, comma-separated)</label>
+                                    <input type="text" id="rules-optout-en" class="form-input" style="font-size: 0.8rem;">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-size: 0.75rem;">Opt-out Keywords (Sinhala, comma-separated)</label>
+                                    <input type="text" id="rules-optout-si" class="form-input" style="font-size: 0.8rem;">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-size: 0.75rem;">Prompt Injection Block Patterns (comma-separated)</label>
+                                    <input type="text" id="rules-prompt-defense" class="form-input" style="font-size: 0.8rem;">
+                                </div>
+                                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="saveComplianceRules()">Save Security</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Flow Builder Page -->
+                <section id="page-flow-builder" class="page">
+                    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div class="header-left">
+                            <h2>Visual Flow Builder</h2>
+                            <p>Drag and model conversational intent routing and auto-responses</p>
+                        </div>
+                        <div class="page-actions" style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-outline btn-sm" onclick="resetFlowLayout()">Reset Layout</button>
+                            <button class="btn btn-outline btn-sm" onclick="addNewIntent()">+ Add Intent</button>
+                            <button class="btn btn-outline btn-sm" onclick="autoGenerateFlow()">✨ AI Auto-Generate</button>
+                            <button class="btn btn-outline btn-sm" onclick="generateFlowFromKB()">📚 Generate from KB</button>
+                            <button class="btn btn-primary btn-sm" onclick="saveFlowBuilder()">Save Flow</button>
+                        </div>
+                    </div>
+                    <div class="card" style="position: relative; height: 650px; overflow: hidden; background: #0b0f19; border: 1px solid var(--border-color); border-radius: var(--radius-lg);">
+                        <svg id="flow-connections-svg" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;"></svg>
+                        <div id="flow-workspace" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; outline: none;"></div>
                     </div>
                 </section>
 
@@ -1433,6 +1700,84 @@
             </div>
         </div>
     </div>
+    <!-- Quick Edit Modal -->
+    <div class="modal-overlay hidden" id="kb-edit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Quick Edit Document</h3>
+                <button class="btn-icon" onclick="closeKnowledgeEditModal()"><svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="kb-edit-id">
+                <div class="form-group">
+                    <label>Raw Content (Markdown / Text)</label>
+                    <textarea id="kb-edit-content" class="form-input" style="height: 300px; font-family: monospace;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeKnowledgeEditModal()">Cancel</button>
+                <button class="btn btn-primary" id="btn-save-kb-edit" onclick="saveKnowledgeEdit()">Save Content</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Testing Playground Modal -->
+    <div class="modal-overlay hidden" id="kb-playground-modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">AI Testing Playground</h3>
+                <button class="btn-icon" onclick="closeKbPlaygroundModal()"><svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Test Query</label>
+                    <div style="display:flex; gap:10px;">
+                        <input type="text" id="kb-playground-input" class="form-input" placeholder="Ask a question about your knowledge base...">
+                        <button class="btn btn-primary" onclick="testKnowledgeQuery()">Test</button>
+                    </div>
+                </div>
+                <div id="kb-playground-results" style="margin-top: 20px; display: none;">
+                    <h4>AI Response</h4>
+                    <div id="kb-playground-ai-response" class="form-input" style="background:#1f2937; color:#e5e7eb; padding:15px; border-radius:8px; min-height:60px;"></div>
+                    <h4 style="margin-top: 15px;">Retrieved Context (Source)</h4>
+                    <pre id="kb-playground-context" style="background:#111827; padding:15px; border-radius:8px; font-size:0.85em; max-height:200px; overflow-y:auto; white-space:pre-wrap;"></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeKbPlaygroundModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CSAT Feedback Modal -->
+    <div class="modal-overlay hidden" id="csat-modal">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div class="modal-header" style="justify-content: center;">
+                <h3 class="modal-title">Customer Satisfaction (CSAT)</h3>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                    Please rate the customer satisfaction score for this resolved conversation.
+                </p>
+                <div class="csat-stars-container">
+                    <span class="csat-star" data-score="1" onclick="setCsatScore(1)">★</span>
+                    <span class="csat-star" data-score="2" onclick="setCsatScore(2)">★</span>
+                    <span class="csat-star" data-score="3" onclick="setCsatScore(3)">★</span>
+                    <span class="csat-star" data-score="4" onclick="setCsatScore(4)">★</span>
+                    <span class="csat-star" data-score="5" onclick="setCsatScore(5)">★</span>
+                </div>
+                <div class="form-group" style="text-align: left;">
+                    <label>Agent's or Customer's Comment (optional)</label>
+                    <textarea id="csat-comment" class="form-input" rows="3" placeholder="Additional feedback..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: space-between; display: flex;">
+                <button class="btn btn-outline" onclick="skipCsatAndResolve()">Skip & Resolve</button>
+                <button class="btn btn-primary" onclick="submitCsatAndResolve()" id="btn-submit-csat">Submit & Resolve</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/socket.io/socket.io.js"></script>

@@ -1,77 +1,243 @@
 {
   "$schema": "compliance-rules/v2.1.0",
   "version": "2.1.0",
-
   "meta_whatsapp_policy": {
     "policy_version": "2025",
     "rules": [
-      { "id": "META-001", "name": "24h_conversational_window", "enforcement": "hard_block", "action": "template_required" },
-      { "id": "META-002", "name": "opt_in_requirement", "enforcement": "hard_block", "action": "suppress" },
-      { "id": "META-003", "name": "template_approval", "enforcement": "hard_block", "action": "block_and_alert" },
-      { "id": "META-004", "name": "business_identity", "enforcement": "hard_block", "action": "block_and_alert" },
-      { "id": "META-005", "name": "prohibited_content", "enforcement": "hard_block", "action": "suppress_and_flag" },
-      { "id": "META-006", "name": "message_frequency", "enforcement": "soft_limit", "action": "throttle" }
+      {
+        "id": "META-001",
+        "name": "24h_conversational_window",
+        "enforcement": "hard_block",
+        "action": "template_required"
+      },
+      {
+        "id": "META-002",
+        "name": "opt_in_requirement",
+        "enforcement": "hard_block",
+        "action": "suppress"
+      },
+      {
+        "id": "META-003",
+        "name": "template_approval",
+        "enforcement": "hard_block",
+        "action": "block_and_alert"
+      },
+      {
+        "id": "META-004",
+        "name": "business_identity",
+        "enforcement": "hard_block",
+        "action": "block_and_alert"
+      },
+      {
+        "id": "META-005",
+        "name": "prohibited_content",
+        "enforcement": "hard_block",
+        "action": "suppress_and_flag"
+      },
+      {
+        "id": "META-006",
+        "name": "message_frequency",
+        "enforcement": "soft_limit",
+        "action": "throttle"
+      }
     ]
   },
-
   "gdpr_ccpa": {
     "baseline": "GDPR + CCPA + Sri Lanka PDPA",
     "rules": [
-      { "id": "PRIV-001", "name": "data_minimization", "enforcement": "hard_block" },
-      { "id": "PRIV-002", "name": "purpose_limitation", "enforcement": "hard_block" },
-      { "id": "PRIV-003", "name": "right_to_erasure", "enforcement": "hard_block", "action": "queue_for_deletion" },
-      { "id": "PRIV-004", "name": "right_to_access", "enforcement": "hard_block", "action": "queue_for_export" },
-      { "id": "PRIV-005", "name": "data_retention", "retention": { "conversations": "365d", "contacts": "730d", "audit_logs": "1825d", "financial": "2555d" } },
-      { "id": "PRIV-006", "name": "consent_management", "types": ["marketing", "analytics", "third_party", "profiling"] }
+      {
+        "id": "PRIV-001",
+        "name": "data_minimization",
+        "enforcement": "hard_block"
+      },
+      {
+        "id": "PRIV-002",
+        "name": "purpose_limitation",
+        "enforcement": "hard_block"
+      },
+      {
+        "id": "PRIV-003",
+        "name": "right_to_erasure",
+        "enforcement": "hard_block",
+        "action": "queue_for_deletion"
+      },
+      {
+        "id": "PRIV-004",
+        "name": "right_to_access",
+        "enforcement": "hard_block",
+        "action": "queue_for_export"
+      },
+      {
+        "id": "PRIV-005",
+        "name": "data_retention",
+        "retention": {
+          "conversations": "365d",
+          "contacts": "730d",
+          "audit_logs": "1825d",
+          "financial": "2555d"
+        }
+      },
+      {
+        "id": "PRIV-006",
+        "name": "consent_management",
+        "types": [
+          "marketing",
+          "analytics",
+          "third_party",
+          "profiling"
+        ]
+      }
     ]
   },
-
   "opt_out": {
     "enabled": true,
-    "keywords_en": ["stop", "unsubscribe", "opt out", "opt-out", "remove me", "cancel", "quit"],
-    "keywords_si": ["නවත්වන්න", "අවලංගු", "ඉවත් කරන්න", "එපා", "නවත්තන්න"],
-    "actions": ["suppress_outbound", "mark_unsubscribed", "send_confirmation", "log_event", "remove_from_broadcasts"],
+    "keywords_en": [
+      "stop",
+      "unsubscribe",
+      "opt out",
+      "opt-out",
+      "remove me",
+      "cancel",
+      "quit"
+    ],
+    "keywords_si": [
+      "නවත්වන්න",
+      "අවලංගු",
+      "ඉවත් කරන්න",
+      "එපා",
+      "නවත්තන්න"
+    ],
+    "actions": [
+      "suppress_outbound",
+      "mark_unsubscribed",
+      "send_confirmation",
+      "log_event",
+      "remove_from_broadcasts"
+    ],
     "confirmation_en": "✅ You've been successfully unsubscribed. You won't receive any more messages from us.",
     "confirmation_si": "✅ ඔබ සාර්ථකව දායකත්වය අත් හැර ඇත. ඔබට තවත් පණිවිඩ ලැබෙන්නේ නැත.",
-    "resubscribe_keywords_en": ["start", "subscribe", "opt in", "yes"],
-    "resubscribe_keywords_si": ["ආරම්භ", "දායක", "එකතු කරන්න"],
+    "resubscribe_keywords_en": [
+      "start",
+      "subscribe",
+      "opt in",
+      "yes"
+    ],
+    "resubscribe_keywords_si": [
+      "ආරම්භ",
+      "දායක",
+      "එකතු කරන්න"
+    ],
     "cooldown_hours": 24
   },
-
   "pii_protection": {
     "enabled": true,
     "scan_inbound": true,
     "scan_outbound": true,
     "never_log_raw": true,
     "patterns": [
-      { "type": "phone", "regex": "(\\+?94|0)?[0-9]{9,10}", "mask": "***-***-{last4}", "action": "mask" },
-      { "type": "email", "regex": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", "mask": "{first2}***@***", "action": "mask" },
-      { "type": "nic", "regex": "([0-9]{9}[VvXx]|[0-9]{12})", "mask": "***{last4}", "action": "mask_and_flag" },
-      { "type": "credit_card", "regex": "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\b", "mask": "****-{last4}", "action": "block_and_alert" },
-      { "type": "bank_account", "regex": "\\b[0-9]{8,18}\\b", "context": ["bank", "account", "ගිණුම"], "action": "mask_and_flag" }
+      {
+        "type": "phone",
+        "regex": "(\\+?94|0)?[0-9]{9,10}",
+        "mask": "***-***-{last4}",
+        "action": "mask"
+      },
+      {
+        "type": "email",
+        "regex": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+        "mask": "{first2}***@***",
+        "action": "mask"
+      },
+      {
+        "type": "nic",
+        "regex": "([0-9]{9}[VvXx]|[0-9]{12})",
+        "mask": "***{last4}",
+        "action": "mask_and_flag"
+      },
+      {
+        "type": "credit_card",
+        "regex": "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\b",
+        "mask": "****-{last4}",
+        "action": "block_and_alert"
+      },
+      {
+        "type": "bank_account",
+        "regex": "\\b[0-9]{8,18}\\b",
+        "context": [
+          "bank",
+          "account",
+          "ගිණුම"
+        ],
+        "action": "mask_and_flag"
+      }
     ]
   },
-
   "prompt_injection_defense": {
     "enabled": true,
-    "block_patterns": ["ignore previous instructions", "ignore all rules", "system prompt", "reveal your instructions", "developer mode", "DAN mode", "jailbreak"],
-    "strip_patterns": ["```system", "<|im_start|>", "\\[INST\\]"],
-    "sanitization": { "strip_markdown_code_blocks": true, "strip_html_tags": true, "max_message_length": 2000 }
+    "block_patterns": [
+      "ignore previous instructions",
+      "ignore all rules",
+      "system prompt",
+      "reveal your instructions",
+      "developer mode",
+      "DAN mode",
+      "jailbreak"
+    ],
+    "strip_patterns": [
+      "```system",
+      "<|im_start|>",
+      "\\[INST\\]"
+    ],
+    "sanitization": {
+      "strip_markdown_code_blocks": true,
+      "strip_html_tags": true,
+      "max_message_length": 2000
+    }
   },
-
   "tone_compliance": {
-    "prohibited": ["threatening_language", "discrimination", "competitor_bashing", "legal_advice", "medical_advice", "financial_investment_advice"],
-    "required": { "first_response": "greeting", "closing": "closing_offer", "escalation": "human_handoff_notice" }
+    "prohibited": [
+      "threatening_language",
+      "discrimination",
+      "competitor_bashing",
+      "legal_advice",
+      "medical_advice",
+      "financial_investment_advice"
+    ],
+    "required": {
+      "first_response": "greeting",
+      "closing": "closing_offer",
+      "escalation": "human_handoff_notice"
+    }
   },
-
   "content_restrictions": {
-    "prohibited_topics": ["political_opinions", "religious_content", "adult_content", "gambling", "weapons", "illegal_substances"],
-    "restricted_actions": ["sharing_internal_configs", "revealing_api_keys", "echoing_system_prompts", "sharing_other_customer_data"]
+    "prohibited_topics": [
+      "political_opinions",
+      "religious_content",
+      "adult_content",
+      "gambling",
+      "weapons",
+      "illegal_substances"
+    ],
+    "restricted_actions": [
+      "sharing_internal_configs",
+      "revealing_api_keys",
+      "echoing_system_prompts",
+      "sharing_other_customer_data"
+    ]
   },
-
   "audit": {
     "log_every_decision": true,
-    "fields": ["message_id", "timestamp", "sender_id_masked", "intent", "confidence", "rule_applied", "action_taken", "agent_id", "compliance_flags", "response_time_ms"],
+    "fields": [
+      "message_id",
+      "timestamp",
+      "sender_id_masked",
+      "intent",
+      "confidence",
+      "rule_applied",
+      "action_taken",
+      "agent_id",
+      "compliance_flags",
+      "response_time_ms"
+    ],
     "storage": "postgresql",
     "retention_days": 365,
     "immutable": true

@@ -14,15 +14,24 @@ const intelligenceService = require('../services/intelligence');
 const analyticsService = require('../services/analytics');
 const cannedResponseService = require('../services/cannedResponse');
 const scheduledMessageService = require('../services/scheduledMessage');
+const bookingService = require('../services/booking');
 const auditLogger = require('../agents/auditLogger');
 const { getQueueStats } = require('../queues/messageQueue');
 const { getRulesVersion, reloadRules } = require('../utils/rulesLoader');
-const { query } = require('../config/database');
+const { query, transaction, getAdapter } = require('../config/database');
 const { jsonToCsv } = require('../utils/csv');
 const events = require('../utils/events');
 const logger = require('../utils/logger');
 const { validate } = require('../middleware/validator');
 const { bruteForceLimiter } = require('../middleware');
+
+const multer = require('multer');
+const upload = multer({ 
+  dest: 'temp/uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+const fs = require('fs');
+const path = require('path');
 
 // ─────────────────────────────────────
 // VALIDATION SCHEMAS
@@ -147,6 +156,20 @@ router.post('/auth/change-password', authenticate, validate(schemas.changePasswo
   } catch (err) {
     logger.error('Change password error', { error: err.message });
     res.status(500).json({ error: 'Password change failed' });
+  }
+});
+
+router.get('/auth/me', authenticate, async (req, res) => {
+  try {
+    const result = await query('SELECT id, email, display_name as name, role, team, status FROM agents WHERE id = $1', [req.user.id]);
+    const agent = result.rows[0];
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+    res.json({ user: agent });
+  } catch (err) {
+    logger.error('Get profile error', { error: err.message });
+    res.status(500).json({ error: 'Failed to retrieve profile' });
   }
 });
 
@@ -280,6 +303,19 @@ router.post('/contacts/:id/tags', authenticate, async (req, res) => {
   }
 });
 
+router.delete('/contacts', authenticate, authorize('admin', 'manager'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'No contact IDs provided' });
+    }
+    const deletedCount = await contactService.deleteContacts(ids);
+    res.json({ success: true, deletedCount, message: `Successfully deleted ${deletedCount} contacts` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch('/contacts/:id/notes', authenticate, async (req, res) => {
   try {
     const { notes } = req.body;
@@ -354,6 +390,36 @@ router.get('/analytics/ai-metrics', authenticate, async (req, res) => {
   }
 });
 
+router.get('/analytics/overview', authenticate, async (req, res) => {
+  try {
+    const stats = await analyticsService.getAdvancedStats();
+    const funnel = await analyticsService.getConversionFunnel();
+    const ai = await analyticsService.getAIMetrics();
+    res.json({
+      success: true,
+      stats,
+      funnel,
+      ai
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/analytics/messages', authenticate, async (req, res) => {
+  try {
+    const days = req.query.period === '30d' ? 30 : 7;
+    const data = await analyticsService.getMessageVolume(days);
+    res.json({
+      success: true,
+      period: req.query.period || '7d',
+      data
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── CANNED RESPONSES (PHASE 5) ───
 router.get('/canned-responses', authenticate, async (req, res) => {
   try {
@@ -382,6 +448,42 @@ router.delete('/canned-responses/:id', authenticate, async (req, res) => {
   }
 });
 
+// ─── OUTBOUND WEBHOOK SUBSCRIPTIONS ───
+router.get('/webhooks', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const webhookService = require('../services/webhook');
+    const data = await webhookService.getAllWebhooks();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/webhooks', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const webhookService = require('../services/webhook');
+    const targetUrl = req.body.targetUrl || req.body.url;
+    const { events, secret } = req.body;
+    if (!targetUrl || !events) {
+      return res.status(400).json({ error: 'Target URL and Events are required' });
+    }
+    const data = await webhookService.createWebhook({ targetUrl, events, secret });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/webhooks/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const webhookService = require('../services/webhook');
+    await webhookService.deleteWebhook(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── SCHEDULED MESSAGES (PHASE 5) ───
 router.post('/scheduled-messages', authenticate, async (req, res) => {
   try {
@@ -402,7 +504,7 @@ router.post('/conversations/:id/transfer', authenticate, async (req, res) => {
   }
 });
 
-router.post('/conversations/:id/csat', async (req, res) => {
+router.post('/conversations/:id/csat', authenticate, async (req, res) => {
   try {
     const { score, comment } = req.body;
     const csatService = require('../services/csat');
@@ -593,6 +695,69 @@ router.post('/system/knowledge', authenticate, authorize('admin'), async (req, r
   }
 });
 
+router.get('/system/rules/:ruleset', authenticate, authorize('admin', 'manager'), async (req, res) => {
+  try {
+    let { ruleset } = req.params;
+    if (ruleset === 'intent-routing') ruleset = 'intentRouting';
+    const { getRules } = require('../utils/rulesLoader');
+    const rules = getRules(ruleset);
+    if (!rules) return res.status(404).json({ error: 'Ruleset not found' });
+    res.json(rules);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/system/rules/:ruleset', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    let { ruleset } = req.params;
+    if (ruleset === 'intent-routing') ruleset = 'intentRouting';
+    const fs = require('fs');
+    const path = require('path');
+    
+    const files = {
+      workspace: 'workspace-rules.json',
+      agent: 'agent-rules.json',
+      compliance: 'compliance-rules.json',
+      intentRouting: 'intent-routing.json',
+      templates: 'templates.json',
+      knowledge: 'knowledge-base.json',
+    };
+
+    const filename = files[ruleset];
+    if (!filename) return res.status(400).json({ error: 'Invalid ruleset key' });
+
+    const rulesPath = path.join(__dirname, '..', '..', '.agent', 'rules', filename);
+    const data = req.body;
+    fs.writeFileSync(rulesPath, JSON.stringify(data, null, 2), 'utf-8');
+    
+    reloadRules();
+    
+    res.json({ success: true, message: `${ruleset} rules updated` });
+  } catch (err) {
+    logger.error('Rules save error', { ruleset, error: err.message });
+    res.status(500).json({ error: `Failed to save ruleset ${ruleset}` });
+  }
+});
+
+router.get('/notifications', authenticate, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/scheduled-messages', authenticate, async (req, res) => {
+  try {
+    const result = await query('SELECT * FROM scheduled_messages ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────────────────
 // SETTINGS / INTEGRATIONS
 // ─────────────────────────────────────
@@ -613,6 +778,10 @@ router.get('/system/public-settings', async (req, res) => {
 
 router.get('/system/backups', authenticate, authorize('admin'), async (req, res) => {
   try {
+    const { getAdapter } = require('../config/database');
+    if (getAdapter() !== 'sqlite') {
+      return res.status(501).json({ error: 'Backup is only supported for SQLite.' });
+    }
     const { listBackups } = require('../utils/backup');
     res.json({ backups: listBackups() });
   } catch (err) {
@@ -622,6 +791,10 @@ router.get('/system/backups', authenticate, authorize('admin'), async (req, res)
 
 router.post('/system/backup', authenticate, authorize('admin'), async (req, res) => {
   try {
+    const { getAdapter } = require('../config/database');
+    if (getAdapter() !== 'sqlite') {
+      return res.status(501).json({ error: 'Backup is only supported for SQLite.' });
+    }
     const { backupDatabase } = require('../utils/backup');
     const result = await backupDatabase();
     res.json(result);
@@ -632,6 +805,10 @@ router.post('/system/backup', authenticate, authorize('admin'), async (req, res)
 
 router.get('/system/download-db', authenticate, authorize('admin'), async (req, res) => {
   try {
+    const { getAdapter } = require('../config/database');
+    if (getAdapter() !== 'sqlite') {
+      return res.status(501).json({ error: 'Database download is only supported for SQLite.' });
+    }
     const path = require('path');
     const fs = require('fs');
     const dbPath = path.join(__dirname, '..', '..', 'data', 'procrm.db');
@@ -648,14 +825,14 @@ router.get('/system/download-db', authenticate, authorize('admin'), async (req, 
 
 // Settings routes continue...
 
-router.get('/system/settings', authenticate, authorize('admin'), async (req, res) => {
+const getSettingsHandler = async (req, res) => {
   try {
     const { loadSettings } = require('../utils/settings');
     const settings = await loadSettings();
     
     // For security, mask sensitive keys in GET if they exist
     const masked = { ...settings };
-    ['WHATSAPP_ACCESS_TOKEN', 'GEMINI_API_KEY', 'META_APP_SECRET'].forEach(k => {
+    ['WHATSAPP_ACCESS_TOKEN', 'GEMINI_API_KEY', 'META_APP_SECRET', 'TELEGRAM_BOT_TOKEN', 'MESSENGER_PAGE_TOKEN'].forEach(k => {
       if (masked[k]) masked[k] = masked[k].substring(0, 8) + '...' + masked[k].substring(masked[k].length - 4);
     });
     
@@ -663,9 +840,9 @@ router.get('/system/settings', authenticate, authorize('admin'), async (req, res
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
 
-router.post('/system/settings', authenticate, authorize('admin'), async (req, res) => {
+const postSettingsHandler = async (req, res) => {
   try {
     const { setSetting } = require('../utils/settings');
     const { key, value } = req.body;
@@ -677,7 +854,13 @@ router.post('/system/settings', authenticate, authorize('admin'), async (req, re
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+router.get('/system/settings', authenticate, authorize('admin'), getSettingsHandler);
+router.get('/settings', authenticate, authorize('admin'), getSettingsHandler);
+
+router.post('/system/settings', authenticate, authorize('admin'), postSettingsHandler);
+router.post('/settings', authenticate, authorize('admin'), postSettingsHandler);
 
 router.post('/system/test-integration', authenticate, authorize('admin'), async (req, res) => {
   try {
@@ -690,7 +873,7 @@ router.post('/system/test-integration', authenticate, authorize('admin'), async 
       
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
       
       // Attempt with timeout and retry for unstable networks
       let lastError = null;
@@ -793,30 +976,74 @@ router.get('/system/backup', authenticate, authorize('admin'), async (req, res) 
   }
 });
 
-router.post('/system/restore', authenticate, authorize('admin'), (req, res) => {
+router.post('/system/restore', authenticate, authorize('admin'), upload.single('file'), async (req, res) => {
   try {
     const { getAdapter } = require('../config/database');
     if (getAdapter() !== 'sqlite') {
       return res.status(501).json({ error: 'Restore is only supported for SQLite.' });
     }
 
-    const dbPath = require('path').join(__dirname, '../../data/procrm.db');
-    const writeStream = require('fs').createWriteStream(dbPath);
-    
-    req.pipe(writeStream);
-    
-    req.on('end', () => {
-      logger.info('Database restored. Restarting in 1s...');
+    if (!req.file) {
+      return res.status(400).json({ error: 'No database file provided.' });
+    }
+
+    const uploadedPath = req.file.path;
+
+    // Validate SQLite magic header: "SQLite format 3\u0000"
+    const fd = fs.openSync(uploadedPath, 'r');
+    const buffer = Buffer.alloc(16);
+    fs.readSync(fd, buffer, 0, 16, 0);
+    fs.closeSync(fd);
+
+    if (buffer.toString('utf-8', 0, 15) !== 'SQLite format 3') {
+      fs.unlinkSync(uploadedPath);
+      return res.status(400).json({ error: 'Invalid file format. Must be a valid SQLite database.' });
+    }
+
+    const dbDir = path.join(__dirname, '../../data');
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+    const dbPath = path.join(dbDir, 'procrm.db');
+    const backupPath = path.join(dbDir, 'procrm.db.bak');
+
+    // Create a backup of the current DB if it exists
+    if (fs.existsSync(dbPath)) {
+      fs.copyFileSync(dbPath, backupPath);
+    }
+
+    try {
+      // Replace the DB file
+      fs.copyFileSync(uploadedPath, dbPath);
+      logger.info('Database restored successfully from upload. Restarting server...');
       res.json({ success: true, message: 'Database restored successfully! Application is restarting.' });
-      setTimeout(() => process.exit(0), 1000);
-    });
-    
-    writeStream.on('error', (err) => {
-      logger.error('Stream write error', { error: err.message });
-      res.status(500).json({ error: 'File write error' });
-    });
+      
+      // Graceful process exit so PM2/Docker can restart it
+      setTimeout(() => {
+        process.exit(0);
+      }, 1000);
+    } catch (copyErr) {
+      // Attempt recovery from backup
+      if (fs.existsSync(backupPath)) {
+        try {
+          fs.copyFileSync(backupPath, dbPath);
+        } catch (restoreBackupErr) {
+          logger.critical('Failed to restore database backup during recovery!', { error: restoreBackupErr.message });
+        }
+      }
+      throw copyErr;
+    }
   } catch (err) {
+    logger.error('Database restore error', { error: err.message });
     res.status(500).json({ error: err.message });
+  } finally {
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (unlinkErr) {
+        logger.error('Failed to cleanup temp restore file', { path: req.file.path, error: unlinkErr.message });
+      }
+    }
   }
 });
 
@@ -862,17 +1089,30 @@ router.get('/dashboard/stats', authenticate, async (req, res) => {
 
 router.get('/dashboard/charts', authenticate, async (req, res) => {
   try {
-    const result = await query(`
-      SELECT 
-        date(created_at) as date,
-        COUNT(*) as count,
-        SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound,
-        SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound
-      FROM messages
-      WHERE created_at >= NOW() - INTERVAL '7 days'
-      GROUP BY date(created_at)
-      ORDER BY date ASC
-    `);
+    const isSqlite = getAdapter() === 'sqlite';
+    const result = isSqlite
+      ? await query(`
+          SELECT 
+            date(created_at) as date,
+            COUNT(*) as count,
+            SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound,
+            SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound
+          FROM messages
+          WHERE created_at >= datetime('now', '-7 days')
+          GROUP BY date(created_at)
+          ORDER BY date ASC
+        `)
+      : await query(`
+          SELECT 
+            created_at::date as date,
+            COUNT(*) as count,
+            SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound,
+            SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound
+          FROM messages
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+          GROUP BY created_at::date
+          ORDER BY date ASC
+        `);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -962,41 +1202,70 @@ events.on(events.CONVERSATION_UPDATED, (data) => broadcast({ type: 'conversation
 // KNOWLEDGE BASE (Universal AI Brain)
 // ─────────────────────────────────────
 
-const multer = require('multer');
-const upload = multer({ 
-  dest: 'temp/uploads/',
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
-});
-const fs = require('fs');
-const path = require('path');
-
 /**
  * GET /api/knowledge/documents
  */
-router.get('/knowledge/documents', authenticate, authorize('admin', 'manager'), async (req, res) => {
+const listKnowledgeDocsHandler = async (req, res) => {
   try {
     const result = await query(
-      'SELECT id, title, doc_type, status, total_chunks, created_at FROM knowledge_documents ORDER BY created_at DESC'
+      'SELECT id, title, doc_type, status, total_chunks, created_at, metadata FROM knowledge_documents ORDER BY created_at DESC'
     );
-    res.json({ documents: result.rows });
+    
+    // Extract category, usage, and expiry from metadata
+    const documents = result.rows.map(row => {
+      let category = 'general';
+      let usage_count = 0;
+      let expires_at = null;
+      if (row.metadata) {
+        try {
+          const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+          if (meta.category) category = meta.category;
+          if (meta.usage_count) usage_count = meta.usage_count;
+          if (meta.expiresAt) expires_at = meta.expiresAt;
+        } catch (e) {
+          logger.error('Error parsing metadata', e);
+        }
+      }
+      return {
+        id: row.id,
+        title: row.title,
+        doc_type: row.doc_type,
+        status: row.status,
+        total_chunks: row.total_chunks,
+        created_at: row.created_at,
+        category: category,
+        usage_count: usage_count,
+        expires_at: expires_at
+      };
+    });
+
+    res.json({ documents });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+router.get('/knowledge/documents', authenticate, authorize('admin', 'manager'), listKnowledgeDocsHandler);
+router.get('/knowledge', authenticate, authorize('admin', 'manager'), listKnowledgeDocsHandler);
 
 /**
  * POST /api/knowledge/upload (Manual Text)
  */
 router.post('/knowledge/upload', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const { title, content } = req.body;
+    const { title, category, content, expiresAt } = req.body;
     if (!title || !content) return res.status(400).json({ error: 'Title and content required' });
 
     const knowledgeService = require('../services/knowledge');
+    const metadata = {};
+    if (expiresAt) metadata.expiresAt = expiresAt;
+
     const result = await knowledgeService.addDocument({
       title,
       content,
-      type: 'manual_entry'
+      category: category || 'general',
+      type: 'manual_entry',
+      metadata
     });
 
     res.json(result);
@@ -1017,12 +1286,12 @@ router.post('/knowledge/upload-file', authenticate, authorize('admin'), upload.s
     logger.info(`📤 File upload started: ${req.file.originalname} (${req.file.size} bytes)`);
 
     const knowledgeService = require('../services/knowledge');
-    const fileType = req.file.mimetype;
     const originalName = req.file.originalname;
-
+    const fileType = req.file.mimetype;
     let content = '';
+    const ext = path.extname(originalName).toLowerCase();
 
-    if (fileType === 'application/pdf') {
+    if (fileType === 'application/pdf' || ext === '.pdf') {
       const pdfParse = require('pdf-parse');
       const dataBuffer = fs.readFileSync(filePath);
       const data = await pdfParse(dataBuffer);
@@ -1031,17 +1300,21 @@ router.post('/knowledge/upload-file', authenticate, authorize('admin'), upload.s
       if (!content || content.trim().length === 0) {
         throw new Error('PDF content is empty or could not be extracted');
       }
-    } else if (fileType === 'text/plain') {
+    } else if (fileType === 'text/plain' || ext === '.txt' || ext === '.md' || ext === '.json' || ext === '.csv') {
       content = fs.readFileSync(filePath, 'utf8');
     } else {
-      throw new Error('Unsupported file type. Use PDF or TXT.');
+      throw new Error('Unsupported file type. Use PDF or TXT/Markdown/JSON/CSV.');
     }
+
+    const metadata = { originalName, fileType, size: req.file.size };
+    if (req.body.expiresAt) metadata.expiresAt = req.body.expiresAt;
 
     const result = await knowledgeService.addDocument({
       title: req.body.title || originalName,
       content,
+      category: req.body.category || 'general',
       type: 'file_upload',
-      metadata: { originalName, fileType, size: req.file.size }
+      metadata
     });
 
     res.json(result);
@@ -1066,7 +1339,7 @@ router.post('/knowledge/upload-file', authenticate, authorize('admin'), upload.s
  */
 router.post('/knowledge/scrape', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const { url, title } = req.body;
+    const { url, title, category, expiresAt } = req.body;
     if (!url) return res.status(400).json({ error: 'URL required' });
 
     const knowledgeService = require('../services/knowledge');
@@ -1074,16 +1347,70 @@ router.post('/knowledge/scrape', authenticate, authorize('admin'), async (req, r
     // 1. Scrape the content
     const content = await knowledgeService.scrapeWebsite(url);
     
+    const metadata = { scrapedAt: new Date().toISOString() };
+    if (expiresAt) metadata.expiresAt = expiresAt;
+
     // 2. Index the content
     const result = await knowledgeService.addDocument({
       title: title || url,
       content,
-      type: 'website',
-      sourceUrl: url
+      category: category || 'general',
+      type: 'web_scrape',
+      sourceUrl: url,
+      metadata
     });
 
     res.json(result);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/knowledge/documents/:id/content
+ * Retrieves the raw text content of a knowledge document (for Quick Edit)
+ */
+router.get('/knowledge/documents/:id/content', authenticate, authorize('admin', 'manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const knowledgeService = require('../services/knowledge');
+    const content = await knowledgeService.getDocumentContent(id);
+    
+    if (!content) {
+      return res.status(404).json({ error: 'Document not found or has no content' });
+    }
+    
+    res.json({ content });
+  } catch (err) {
+    logger.error('Error fetching document content', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /api/knowledge/documents/:id
+ * Updates the text content of a knowledge document (Quick Edit)
+ */
+router.put('/knowledge/documents/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    
+    if (!content || content.trim() === '') {
+      return res.status(400).json({ error: 'Content cannot be empty' });
+    }
+
+    const docRes = await query('SELECT id FROM knowledge_documents WHERE id = $1', [id]);
+    if (docRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    const knowledgeService = require('../services/knowledge');
+    const result = await knowledgeService.updateDocument(id, content);
+
+    res.json(result);
+  } catch (err) {
+    logger.error('Error updating document content', { error: err.message });
     res.status(500).json({ error: err.message });
   }
 });
@@ -1100,6 +1427,15 @@ router.delete('/knowledge/documents/:id', authenticate, authorize('admin'), asyn
       // 2. Delete the document
       await client.query('DELETE FROM knowledge_documents WHERE id = $1', [id]);
     });
+
+    // Invalidate knowledge cache
+    try {
+      const knowledgeService = require('../services/knowledge');
+      knowledgeService.invalidateCache();
+    } catch (e) {
+      logger.error('Failed to invalidate knowledge cache on document deletion:', e.message);
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1151,6 +1487,42 @@ router.get('/appointments', authenticate, async (req, res) => {
   }
 });
 
+router.post('/appointments', authenticate, async (req, res) => {
+  try {
+    const { contactId, contactName, contactPhone, date, time, reason } = req.body;
+    if (!contactId || !date || !time) {
+      return res.status(400).json({ error: 'Contact ID, date, and time are required' });
+    }
+    const result = await bookingService.bookAppointment({
+      contactId,
+      contactName,
+      contactPhone,
+      date,
+      time,
+      reason
+    });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/appointments/:id/cancel', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await bookingService.cancelAppointment(id);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────────────────
 // SHIFTS (Phase 7)
 // ─────────────────────────────────────
@@ -1195,6 +1567,207 @@ router.post('/messages/:id/feedback', authenticate, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────
+// ADVANCED FEATURES (Phase 8)
+// ─────────────────────────────────────
+
+/**
+ * GET /api/analytics/advanced
+ */
+router.get('/analytics/advanced', authenticate, async (req, res) => {
+  try {
+    const data = await analyticsService.getAdvancedStats();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/system/flow-builder
+ */
+router.get('/system/flow-builder', authenticate, authorize('admin', 'manager'), async (req, res) => {
+  try {
+    const { getSetting } = require('../utils/settings');
+    const layout = await getSetting('VISUAL_FLOW_LAYOUT', '{"nodes":[],"edges":[]}');
+    const parsedLayout = typeof layout === 'string' ? JSON.parse(layout) : layout;
+    res.json(parsedLayout);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/system/flow-builder
+ */
+router.post('/system/flow-builder', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { setSetting } = require('../utils/settings');
+    const { layout, compiledRules } = req.body;
+    
+    if (layout) {
+      await setSetting('VISUAL_FLOW_LAYOUT', JSON.stringify(layout));
+    }
+    
+    if (compiledRules) {
+      const fs = require('fs');
+      const path = require('path');
+      const rulesPath = path.join(__dirname, '..', '..', '.agent', 'rules', 'intent-routing.json');
+      fs.writeFileSync(rulesPath, JSON.stringify(compiledRules, null, 2), 'utf-8');
+      reloadRules();
+    }
+    
+    res.json({ success: true, message: 'Flow builder saved and compiled rules updated.' });
+  } catch (err) {
+    logger.error('Flow builder save error', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/system/flow-builder/generate
+ */
+router.post('/system/flow-builder/generate', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+
+    const gemini = require('../services/gemini');
+    const generatedRules = await gemini.generateFlowBuilderRules(prompt);
+    
+    res.json({ success: true, rules: generatedRules });
+  } catch (err) {
+    logger.error('Flow builder generation error', { error: err.message });
+    res.status(500).json({ error: err.message || 'Failed to generate flow' });
+  }
+});
+
+/**
+ * POST /api/system/flow-builder/generate-from-kb
+ */
+router.post('/system/flow-builder/generate-from-kb', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    // 1. Fetch all documents from KB
+    const result = await query('SELECT title, metadata FROM knowledge_documents WHERE status = $1', ['active']);
+    
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Knowledge Base is empty. Please train the AI first.' });
+    }
+
+    // 2. Build summary
+    const docsSummary = result.rows.map(row => {
+      let category = 'general';
+      if (row.metadata) {
+        try {
+          const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+          if (meta.category) category = meta.category;
+        } catch(e) {}
+      }
+      return `- Title: ${row.title} (Category: ${category})`;
+    }).join('\n');
+
+    // 3. Generate Flow
+    const gemini = require('../services/gemini');
+    const generatedRules = await gemini.generateFlowFromKnowledge(docsSummary);
+    
+    res.json({ success: true, rules: generatedRules });
+  } catch (err) {
+    logger.error('Flow builder KB generation error', { error: err.message });
+    res.status(500).json({ error: err.message || 'Failed to generate flow from KB' });
+  }
+});
+
+/**
+ * GET /api/conversations/:id/copilot-suggest
+ */
+router.get('/conversations/:id/copilot-suggest', authenticate, async (req, res) => {
+  try {
+    const conversationId = req.params.id;
+    // Get last 10 messages from the conversation history
+    const messages = await conversationService.getConversationHistory(conversationId, 10);
+    
+    // Get conversation details to fetch contact name and intent
+    const conversationRes = await query('SELECT c.*, co.display_name FROM conversations c JOIN contacts co ON c.contact_id = co.id WHERE c.id = $1', [conversationId]);
+    const conversation = conversationRes.rows[0];
+    
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
+    // Use last user message to retrieve context from knowledge base
+    const lastUserMessage = [...messages].reverse().find(m => m.direction === 'inbound')?.content || '';
+    
+    const { findRelevantContext } = require('../services/knowledge');
+    const contextText = lastUserMessage ? await findRelevantContext(lastUserMessage, 3) : '';
+    
+    const gemini = require('../services/gemini');
+    const suggestion = await gemini.generateCopilotSuggestion({
+      conversationHistory: messages,
+      contextText,
+      contactName: conversation.display_name
+    });
+    
+    res.json({ success: true, suggestion });
+  } catch (err) {
+    logger.error('Copilot suggest error', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/knowledge/test
+ * Test the Knowledge Base search and AI response generation (Playground)
+ */
+router.post('/knowledge/test', authenticate, authorize('admin', 'manager'), async (req, res) => {
+  try {
+    const { query: queryText } = req.body;
+    if (!queryText) return res.status(400).json({ error: 'Query is required' });
+
+    const knowledgeService = require('../services/knowledge');
+    
+    // We pass testMode = true to findRelevantContext so it returns an object with chunksInfo
+    const result = await knowledgeService.findRelevantContext(queryText, 5, true);
+    
+    let contextStr = '';
+    let chunksInfo = [];
+
+    if (typeof result === 'object' && result !== null) {
+      contextStr = result.topContext;
+      chunksInfo = result.chunksInfo || [];
+    } else {
+      contextStr = result;
+    }
+
+    if (!contextStr) {
+      return res.json({ answer: "I couldn't find any relevant information in the Knowledge Hub to answer your question.", chunksInfo: [] });
+    }
+
+    const { getGenerativeModel } = require('../services/gemini');
+    const model = await getGenerativeModel();
+
+    if (!model) {
+      return res.json({ answer: "Gemini AI is not configured. Context retrieved successfully, but cannot generate a response.", chunksInfo });
+    }
+
+    const prompt = `You are a helpful AI assistant. Answer the user's question using ONLY the provided context from our knowledge base. 
+If the context doesn't contain the answer, say "I don't know based on the provided context."
+
+Context:
+${contextStr}
+
+Question: ${queryText}
+Answer:`;
+
+    const aiRes = await model.generateContent(prompt);
+    const answer = aiRes.response.text();
+
+    res.json({ answer, chunksInfo });
+  } catch (err) {
+    logger.error('Playground Test Failed', err);
     res.status(500).json({ error: err.message });
   }
 });

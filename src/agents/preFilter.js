@@ -157,7 +157,19 @@ async function process(messageData) {
   }
 
   // 3. Check spam
-  const spamCheck = checkSpam(messageData.text || '');
+  let senderHistory = [];
+  if (contact) {
+    const db = require('../config/database');
+    const recentMessages = await db.query(
+      `SELECT content FROM messages 
+       WHERE contact_id = $1 AND direction = 'inbound' AND created_at >= NOW() - INTERVAL '1 minute'
+       ORDER BY created_at ASC`,
+      [contact.id]
+    );
+    senderHistory = recentMessages.rows.map(r => r.content);
+  }
+
+  const spamCheck = checkSpam(messageData.text || '', senderHistory);
   if (spamCheck.isSpam) {
     flags.push('spam_detected');
     logger.warn('Spam detected', { reason: spamCheck.reason });

@@ -6,6 +6,7 @@ const { query } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 const { generateResponse } = require('./gemini');
 const { sendTextMessage } = require('./whatsapp');
+const events = require('../utils/events');
 const logger = require('../utils/logger');
 
 /**
@@ -47,6 +48,13 @@ async function executeCampaign(campaignId) {
     // 3. Update campaign status
     await query('UPDATE campaigns SET status = $1, total_recipients = $2, last_sent_at = CURRENT_TIMESTAMP WHERE id = $3', 
       ['sending', contacts.length, campaignId]);
+    events.emit(events.CAMPAIGN_UPDATED, {
+      id: campaignId,
+      name: campaign.name,
+      status: 'sending',
+      total_recipients: contacts.length,
+      sent_count: 0
+    });
 
     // 4. Send personalized messages
     let sentCount = 0;
@@ -62,6 +70,14 @@ async function executeCampaign(campaignId) {
           contactName: contact.display_name
         });
         if (aiResult.success) personalizedMessage = aiResult.reply;
+      } else {
+        // Fallback replacement of placeholders
+        personalizedMessage = personalizedMessage
+          .replace(/\{\{name\}\}/gi, contact.display_name || 'Customer')
+          .replace(/\{\{display_name\}\}/gi, contact.display_name || 'Customer')
+          .replace(/\{\{phone\}\}/gi, contact.phone_number || '')
+          .replace(/\{\{phone_number\}\}/gi, contact.phone_number || '')
+          .replace(/\{\{company\}\}/gi, contact.company || 'your company');
       }
 
       const result = await sendTextMessage(contact.phone_number, personalizedMessage);
@@ -74,11 +90,31 @@ async function executeCampaign(campaignId) {
       );
 
       if (result.success) sentCount++;
+
+      // Update intermediate sent count in database
+      await query('UPDATE campaigns SET sent_count = $1 WHERE id = $2', [sentCount, campaignId]);
+
+      // Emit progress event
+      events.emit(events.CAMPAIGN_UPDATED, {
+        id: campaignId,
+        name: campaign.name,
+        status: 'sending',
+        total_recipients: contacts.length,
+        sent_count: sentCount
+      });
     }
 
     // 5. Mark campaign as completed
     await query('UPDATE campaigns SET status = $1, sent_count = $2 WHERE id = $3', 
       ['completed', sentCount, campaignId]);
+
+    events.emit(events.CAMPAIGN_UPDATED, {
+      id: campaignId,
+      name: campaign.name,
+      status: 'completed',
+      total_recipients: contacts.length,
+      sent_count: sentCount
+    });
 
     logger.info(`Campaign completed: ${campaign.name}`, { sent: sentCount });
     return { success: true, sentCount };
@@ -86,6 +122,11 @@ async function executeCampaign(campaignId) {
   } catch (err) {
     logger.error('Campaign execution failed', { error: err.message });
     await query('UPDATE campaigns SET status = $1 WHERE id = $2', ['failed', campaignId]);
+    events.emit(events.CAMPAIGN_UPDATED, {
+      id: campaignId,
+      name: 'Unknown Campaign',
+      status: 'failed'
+    });
     throw err;
   }
 }

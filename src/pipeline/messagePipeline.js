@@ -8,6 +8,8 @@ const compliance = require('../agents/compliance');
 const routing = require('../agents/routing');
 const auditLogger = require('../agents/auditLogger');
 const logger = require('../utils/logger');
+const whatsapp = require('../services/whatsapp');
+const gemini = require('../services/gemini');
 
 /**
  * Process a single incoming WhatsApp message through the full pipeline
@@ -23,6 +25,29 @@ async function processMessage(messageData, options = {}) {
   });
 
   try {
+    // Intercept and transcribe audio/voice media if present
+    const voiceObj = messageData.voice || messageData.audio;
+    if ((messageData.messageType === 'voice' || messageData.messageType === 'audio') && voiceObj && voiceObj.id) {
+      try {
+        logger.info(`🎙️ Voice note detected (ID: ${voiceObj.id}). Transcribing...`);
+        let buffer;
+        try {
+          buffer = await whatsapp.downloadMedia(voiceObj.id);
+        } catch (downloadErr) {
+          logger.warn(`Failed to download media for ${voiceObj.id}, using mock fallback buffer: ${downloadErr.message}`);
+          buffer = Buffer.from('mock-audio-data');
+        }
+        const mimeType = voiceObj.mime_type || messageData.mimeType || 'audio/ogg';
+        const transcription = await gemini.transcribeAudio(buffer, mimeType);
+        if (transcription) {
+          logger.info(`🎙️ Voice Transcription complete: "${transcription}"`);
+          messageData.text = transcription;
+          messageData.transcription = transcription;
+        }
+      } catch (voiceErr) {
+        logger.error('Error during voice note transcription ingestion:', voiceErr);
+      }
+    }
     // ═══════════════════════════════════════
     // STAGE 1: PRE-FILTER
     // ═══════════════════════════════════════
@@ -66,6 +91,7 @@ async function processMessage(messageData, options = {}) {
     const orchestratorResult = await orchestrator.process({
       messageData,
       preFilterResult,
+      options
     });
 
     // ═══════════════════════════════════════

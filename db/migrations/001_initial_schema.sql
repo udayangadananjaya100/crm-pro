@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     opt_in_analytics BOOLEAN DEFAULT false,
     language_preference VARCHAR(5) DEFAULT 'en',
     last_message_at TIMESTAMPTZ,
+    notes TEXT,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -73,11 +74,12 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     whatsapp_message_id VARCHAR(255),
-    direction VARCHAR(10) NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+    direction VARCHAR(10) NOT NULL CHECK (direction IN ('inbound', 'outbound', 'internal')),
     message_type VARCHAR(20) NOT NULL DEFAULT 'text'
-        CHECK (message_type IN ('text', 'image', 'document', 'audio', 'video', 'sticker', 'template', 'interactive', 'reaction')),
+        CHECK (message_type IN ('text', 'image', 'document', 'audio', 'video', 'sticker', 'template', 'interactive', 'reaction', 'transfer', 'system')),
     content TEXT,
     content_masked TEXT,
+    transcription TEXT,
     media_url TEXT,
     media_mime_type VARCHAR(100),
     template_name VARCHAR(100),

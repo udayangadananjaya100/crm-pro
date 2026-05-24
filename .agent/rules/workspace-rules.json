@@ -3,7 +3,6 @@
   "version": "2.1.0",
   "last_updated": "2026-05-08T15:48:00+05:30",
   "environment": "production",
-
   "workspace": {
     "name": "Pro CRM — WhatsApp Business Platform",
     "description": "Production-grade WhatsApp CRM integrated with Meta Cloud API for lead management, customer support, and sales automation.",
@@ -12,7 +11,6 @@
     "timezone": "Asia/Colombo",
     "default_currency": "LKR"
   },
-
   "deployment": {
     "runtime": "Node.js",
     "framework": "Express",
@@ -23,24 +21,43 @@
     "ai_provider": "Google Gemini",
     "hosting": "VPS / Cloud"
   },
-
   "business_hours": {
     "enabled": false,
     "timezone": "Asia/Colombo",
     "schedule": {
-      "monday":    { "start": "08:00", "end": "20:00" },
-      "tuesday":   { "start": "08:00", "end": "20:00" },
-      "wednesday": { "start": "08:00", "end": "20:00" },
-      "thursday":  { "start": "08:00", "end": "20:00" },
-      "friday":    { "start": "08:00", "end": "20:00" },
-      "saturday":  { "start": "09:00", "end": "17:00" },
-      "sunday":    { "start": "10:00", "end": "14:00" }
+      "monday": {
+        "start": "08:00",
+        "end": "20:00"
+      },
+      "tuesday": {
+        "start": "08:00",
+        "end": "20:00"
+      },
+      "wednesday": {
+        "start": "08:00",
+        "end": "20:00"
+      },
+      "thursday": {
+        "start": "08:00",
+        "end": "20:00"
+      },
+      "friday": {
+        "start": "08:00",
+        "end": "20:00"
+      },
+      "saturday": {
+        "start": "09:00",
+        "end": "17:00"
+      },
+      "sunday": {
+        "start": "10:00",
+        "end": "14:00"
+      }
     },
     "holidays": [],
     "off_hours_behavior": "template_only",
     "off_hours_reply_template": "off_hours_auto_reply"
   },
-
   "messaging": {
     "provider": "meta_cloud_api",
     "api_version": "v21.0",
@@ -63,7 +80,6 @@
       "max_file_size_mb": 16
     }
   },
-
   "conversational_window": {
     "duration_hours": 24,
     "free_form_allowed": true,
@@ -71,7 +87,6 @@
     "auto_extend_on_reply": true,
     "grace_period_minutes": 5
   },
-
   "spam_detection": {
     "enabled": true,
     "rate_limit_per_sender": {
@@ -87,7 +102,6 @@
     ],
     "action_on_detect": "suppress_and_flag"
   },
-
   "features": {
     "ai_auto_reply": true,
     "lead_capture": true,
@@ -102,9 +116,12 @@
     "customer_segmentation": true,
     "analytics_dashboard": true
   },
-
   "notifications": {
-    "channels": ["email", "slack", "in_app"],
+    "channels": [
+      "email",
+      "slack",
+      "in_app"
+    ],
     "escalation_alerts": true,
     "sla_breach_alerts": true,
     "daily_report": true,
@@ -112,7 +129,6 @@
     "manager_email": "${MANAGER_EMAIL}",
     "slack_webhook": "${SLACK_WEBHOOK_URL}"
   },
-
   "database": {
     "provider": "postgresql",
     "connection_string": "${DATABASE_URL}",
@@ -126,18 +142,20 @@
       "retention_days": 90
     }
   },
-
   "redis": {
     "connection_string": "${REDIS_URL}",
     "queue_prefix": "procrm:",
     "session_ttl_seconds": 86400,
     "cache_ttl_seconds": 3600
   },
-
   "logging": {
     "level": "info",
     "format": "json",
-    "destinations": ["stdout", "file", "database"],
+    "destinations": [
+      "stdout",
+      "file",
+      "database"
+    ],
     "log_file_path": "logs/procrm.log",
     "rotation": {
       "max_size_mb": 50,
@@ -149,10 +167,11 @@
       "retention_days": 365
     }
   },
-
   "security": {
     "helmet_enabled": true,
-    "cors_origins": ["${ADMIN_DASHBOARD_URL}"],
+    "cors_origins": [
+      "${ADMIN_DASHBOARD_URL}"
+    ],
     "api_key_header": "X-API-Key",
     "jwt_secret": "${JWT_SECRET}",
     "jwt_expiry": "24h",

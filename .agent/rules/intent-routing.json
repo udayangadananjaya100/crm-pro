@@ -1,119 +1,23 @@
 {
-  "$schema": "intent-routing/v2.1.0",
   "version": "2.1.0",
-
-  "intent_classification": {
-    "method": "keyword_match_then_ai",
-    "ai_fallback": true,
-    "default_intent": "general",
-    "confidence_boost_on_keyword_match": 0.15
-  },
-
   "intents": {
-    "sales": {
-      "description": "Product inquiries, pricing, demos, purchasing interest",
-      "assigned_team": "sales",
-      "priority": "high",
-      "keywords_en": ["price", "pricing", "cost", "buy", "purchase", "demo", "trial", "plan", "package", "offer", "discount", "subscribe", "upgrade", "quote", "proposal", "interested"],
-      "keywords_si": ["මිල", "ගාස්තු", "මිලදී ගන්න", "පැකේජ", "දීමනා", "වට්ටම්", "උනන්දුයි", "මිල ගණන්", "සැලැස්ම"],
-      "auto_responses": {
-        "en": "Thanks for your interest! Let me get you the details on our plans and pricing. 📋",
-        "si": "ඔබේ උනන්දුවට ස්තූතියි! අපගේ සැලසුම් සහ මිල ගණන් පිළිබඳ විස්තර ලබා දෙන්නම්. 📋"
-      },
-      "escalate_if": ["custom_pricing_request", "enterprise_inquiry", "bulk_order"]
-    },
-
-    "support": {
-      "description": "Technical help, complaints, issues, troubleshooting",
-      "assigned_team": "support",
-      "priority": "high",
-      "keywords_en": ["help", "issue", "problem", "error", "bug", "broken", "not working", "fix", "complaint", "support", "trouble", "crash", "stuck", "how to", "can't", "unable"],
-      "keywords_si": ["උදව්", "ගැටළුවක්", "ප්‍රශ්නයක්", "වැරදි", "හරි නැහැ", "ක්‍රියා නොකරයි", "පැමිණිලි", "සහාය", "කරන්නේ කොහොමද"],
-      "auto_responses": {
-        "en": "I'm sorry you're experiencing an issue. Let me help you resolve this! 🔧 Could you describe the problem?",
-        "si": "ඔබට ගැටළුවක් ඇති වූ බව දුක්සහගතයි. මෙය විසඳීමට උදව් කරන්නම්! 🔧 කරුණාකර ගැටළුව විස්තර කරන්න."
-      },
-      "escalate_if": ["data_loss", "security_concern", "service_outage", "repeated_issue"]
-    },
-
     "billing": {
-      "description": "Payments, invoices, refunds, subscription management",
-      "assigned_team": "finance",
-      "priority": "medium",
-      "keywords_en": ["bill", "billing", "invoice", "payment", "pay", "refund", "charge", "receipt", "subscription", "renew", "cancel subscription", "overcharge"],
-      "keywords_si": ["බිල්පත", "ගෙවීම", "මුදල්", "ආපසු", "රිසිට්", "දායකත්වය", "ගෙවන්න", "අය කිරීම"],
-      "auto_responses": {
-        "en": "I'll help you with your billing inquiry. 💳 Let me look into this for you.",
-        "si": "ඔබේ බිල්පත් විමසුම සම්බන්ධයෙන් උදව් කරන්නම්. 💳"
+      "keywords": {
+        "en": [
+          "bill",
+          "payment",
+          "invoice",
+          "receipt",
+          "charge"
+        ],
+        "si": [
+          "ගෙවීම්",
+          "බිල්",
+          "රසීදු",
+          "මුදල්"
+        ]
       },
-      "escalate_if": ["refund_request", "payment_dispute", "overcharge_claim"]
-    },
-
-    "greeting": {
-      "description": "Hellos, good morning, initial contact",
-      "assigned_team": "general_pool",
-      "priority": "low",
-      "keywords_en": ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "howdy", "whats up"],
-      "keywords_si": ["ආයුබෝවන්", "හෙලෝ", "කොහොමද", "සුභ උදෑසනක්", "සුභ සන්ධ්‍යාවක්"],
-      "auto_responses": {
-        "en": "👋 Hello! Welcome to Pro CRM. How can I assist you today?",
-        "si": "👋 ආයුබෝවන්! Pro CRM වෙත සාදරයෙන් පිළිගනිමු. අද ඔබට කෙසේ උදව් කළ හැකිද?"
-      }
-    },
-
-    "feedback": {
-      "description": "Reviews, suggestions, testimonials",
-      "assigned_team": "general_pool",
-      "priority": "low",
-      "keywords_en": ["feedback", "suggestion", "review", "rate", "rating", "experience", "improve", "recommend"],
-      "keywords_si": ["ප්‍රතිචාර", "යෝජනා", "සමාලෝචන", "අත්දැකීම", "වැඩිදියුණු"],
-      "auto_responses": {
-        "en": "Thank you for your feedback! We truly value your input. 🙏",
-        "si": "ඔබේ ප්‍රතිචාරයට ස්තූතියි! ඔබේ අදහස් අපට ඉතා වටිනවා. 🙏"
-      }
-    },
-
-    "general": {
-      "description": "Catch-all for unclassified messages",
-      "assigned_team": "general_pool",
-      "priority": "low",
-      "keywords_en": [],
-      "keywords_si": [],
-      "auto_responses": {
-        "en": "Thanks for reaching out! How can I help you today? You can ask about:\n1️⃣ Sales & Pricing\n2️⃣ Support\n3️⃣ Billing\n4️⃣ Other",
-        "si": "සම්බන්ධ වීමට ස්තූතියි! අද ඔබට කෙසේ උදව් කළ හැකිද?\n1️⃣ විකුණුම් සහ මිල ගණන්\n2️⃣ සහාය\n3️⃣ බිල්පත්\n4️⃣ වෙනත්"
-      }
-    },
-
-    "unknown": {
-      "description": "AI could not classify the message",
-      "assigned_team": "general_pool",
-      "priority": "medium",
-      "auto_responses": {
-        "en": "I'm not quite sure I understand. Could you rephrase that? Or I can connect you with a team member who can help! 😊",
-        "si": "මට තේරුණේ නැහැ. කරුණාකර නැවත පැහැදිලි කරන්න. නැත්නම් ඔබට උදව් කළ හැකි කණ්ඩායම් සාමාජිකයෙකු සමඟ සම්බන්ධ කරන්නම්! 😊"
-      },
-      "auto_escalate": true
+      "assigned_team": "finance"
     }
-  },
-
-  "menu_routing": {
-    "enabled": true,
-    "options": {
-      "1": "sales",
-      "2": "support",
-      "3": "billing",
-      "4": "general"
-    }
-  },
-
-  "sentiment_modifiers": {
-    "angry_keywords_en": ["angry", "furious", "terrible", "worst", "horrible", "disgusting", "scam", "fraud", "sue"],
-    "angry_keywords_si": ["කෝපයි", "නරකම", "බොරු", "වංචා", "අවලස්සන"],
-    "angry_action": "boost_priority_and_flag",
-    "priority_boost": 1.5,
-    "urgent_keywords_en": ["urgent", "asap", "emergency", "immediately", "now"],
-    "urgent_keywords_si": ["හදිසි", "දැන්ම", "ඉක්මනින්"],
-    "urgent_action": "boost_priority"
   }
 }

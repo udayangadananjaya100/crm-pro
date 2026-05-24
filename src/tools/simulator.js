@@ -9,8 +9,19 @@ const { processMessage } = require('../pipeline/messagePipeline');
 const { loadAllRules } = require('../utils/rulesLoader');
 const logger = require('../utils/logger');
 
-// Load rules
-loadAllRules();
+const db = require('../config/database');
+
+// Load rules & Initialize DB
+async function init() {
+  loadAllRules();
+  try {
+    await db.initializeDatabase();
+  } catch (err) {
+    logger.error('Failed to initialize database for simulator', { error: err.message });
+    process.exit(1);
+  }
+}
+
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -133,4 +144,7 @@ function prompt() {
   });
 }
 
-prompt();
+init().then(() => {
+  prompt();
+});
+

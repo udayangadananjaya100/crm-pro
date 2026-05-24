@@ -5,9 +5,10 @@
 const { Queue, Worker, QueueScheduler } = require('bullmq');
 const { getRedis } = require('../config/redis');
 const { processMessage } = require('../pipeline/messagePipeline');
+const realtime = require('../services/realtime');
 const logger = require('../utils/logger');
 
-const QUEUE_NAME = 'procrm:messages';
+const QUEUE_NAME = 'procrm-messages';
 
 let messageQueue = null;
 let messageWorker = null;
@@ -90,6 +91,15 @@ function startWorker(concurrency = 5) {
 
   messageWorker.on('completed', (job, result) => {
     logger.debug(`Job ${job.id} completed successfully`);
+    if (result) {
+      realtime.emitNewMessage({
+        direction: 'inbound',
+        contactName: job.data.contactName || job.data.from,
+        conversationId: result.conversation_id,
+        intent: result.intent,
+        confidence: result.confidence,
+      });
+    }
   });
 
   messageWorker.on('failed', (job, err) => {

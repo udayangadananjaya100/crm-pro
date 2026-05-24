@@ -19,6 +19,9 @@ const env = require('./config/environment');
 const logger = require('./utils/logger');
 const { loadAllRules } = require('./utils/rulesLoader');
 const { startSLALoop } = require('./agents/slaMonitor');
+const { startAutoRescrape } = require('./agents/autoRescraper');
+const { startScheduledMessageLoop } = require('./agents/scheduledMessageRunner');
+const { startWorker } = require('./queues/messageQueue');
 const db = require('./config/database');
 const redis = require('./config/redis');
 const realtime = require('./services/realtime');
@@ -51,11 +54,16 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 app.use(cors({
-  origin: env.isDev ? '*' : env.ADMIN_DASHBOARD_URL,
+  origin: env.isDev ? true : (env.ADMIN_DASHBOARD_URL || 'http://localhost:3000'),
   credentials: true,
 }));
 app.use(compression());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({
+  limit: '5mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Logging
@@ -79,11 +87,13 @@ app.use('/api/health', healthRoutes);
 // Setup routes (checks internally if setup is complete)
 app.use('/api/setup', setupRoutes);
 
-// WhatsApp webhook (higher rate limit, no auth — Meta validates via verify token)
-app.use('/api/webhook/whatsapp', webhookLimiter, webhookRoutes);
+// Webhooks (higher rate limit, no auth)
+app.use('/api/webhook', webhookLimiter, webhookRoutes);
 
 // Test routes (dev only — auto-disabled in production, no api rate limit)
-app.use('/api/test', testRoutes);
+if (env.isDev) {
+  app.use('/api/test', testRoutes);
+}
 
 // REST API (authenticated + rate limited)
 app.use('/api', apiLimiter, apiRoutes);
@@ -122,6 +132,18 @@ app.get('/', (req, res) => {
 app.use(errorHandler);
 
 // ─────────────────────────────────────
+// Process Exception Handlers
+// ─────────────────────────────────────
+process.on('unhandledRejection', (reason) => {
+  logger.error('💥 Unhandled Rejection', { reason: reason instanceof Error ? reason.message : reason, stack: reason instanceof Error ? reason.stack : undefined });
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('💥 Uncaught Exception', { error: err.message, stack: err.stack });
+  process.exit(1);
+});
+
+// ─────────────────────────────────────
 // Server Startup
 // ─────────────────────────────────────
 async function startServer() {
@@ -145,6 +167,11 @@ async function startServer() {
     const redisHealth = await redis.healthCheck();
     if (redisHealth.status === 'healthy') {
       logger.info('✅ Redis connected');
+      try {
+        startWorker();
+      } catch (err) {
+        logger.error('Failed to start BullMQ worker:', err.message);
+      }
     } else {
       logger.warn('⚠️  Redis not available — queue processing disabled');
     }
@@ -174,6 +201,8 @@ async function startServer() {
 
       // 5. Start background agents
       startSLALoop();
+      startAutoRescrape();
+      startScheduledMessageLoop();
     });
 
     // ─────────────────────────────────────
@@ -181,18 +210,20 @@ async function startServer() {
     // ─────────────────────────────────────
     const shutdown = async (signal) => {
       logger.info(`\n🛑 ${signal} received. Shutting down gracefully...`);
+      
+      const forceTimeout = setTimeout(() => {
+        logger.error('⚠️  Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+      forceTimeout.unref();
+
       server.close(async () => {
+        clearTimeout(forceTimeout);
         await db.close();
         await redis.close();
         logger.info('✅ Server shut down cleanly');
         process.exit(0);
       });
-
-      // Force shutdown after 10s
-      setTimeout(() => {
-        logger.error('⚠️  Forced shutdown after timeout');
-        process.exit(1);
-      }, 10000);
     };
 
     process.on('SIGTERM', () => shutdown('SIGTERM'));

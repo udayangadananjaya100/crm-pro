@@ -1,10 +1,7 @@
-/**
- * Pro CRM — Booking Service
- * Handles appointment scheduling and availability
- */
 const { query } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
+const events = require('../utils/events');
 
 /**
  * Check if a slot is available
@@ -41,6 +38,18 @@ async function bookAppointment({ contactId, contactName, contactPhone, date, tim
 
     logger.info('Appointment booked successfully', { id, contactId, date, time });
 
+    // Emit event for real-time dashboard and webhooks
+    events.emit(events.APPOINTMENT_BOOKED, {
+      id,
+      contactId,
+      contactName,
+      contactPhone,
+      date,
+      time,
+      reason,
+      status: 'confirmed'
+    });
+
     return { 
       success: true, 
       id, 
@@ -48,6 +57,38 @@ async function bookAppointment({ contactId, contactName, contactPhone, date, tim
     };
   } catch (err) {
     logger.error('Booking failed', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Cancel an appointment
+ */
+async function cancelAppointment(id) {
+  try {
+    const result = await query(
+      'UPDATE appointments SET status = $1 WHERE id = $2 RETURNING *',
+      ['cancelled', id]
+    );
+
+    let appointment = result.rows[0];
+    if (!appointment) {
+      const fetchResult = await query("SELECT * FROM appointments WHERE id = $1", [id]);
+      appointment = fetchResult.rows[0];
+    }
+
+    if (!appointment) {
+      return { success: false, error: 'Appointment not found.' };
+    }
+
+    logger.info('Appointment cancelled successfully', { id });
+
+    // Emit event for real-time dashboard and webhooks
+    events.emit(events.APPOINTMENT_CANCELLED, appointment);
+
+    return { success: true, appointment };
+  } catch (err) {
+    logger.error('Cancelling appointment failed', { id, error: err.message });
     return { success: false, error: err.message };
   }
 }
@@ -66,5 +107,7 @@ async function getAppointmentsForDate(date) {
 module.exports = {
   bookAppointment,
   isSlotAvailable,
-  getAppointmentsForDate
+  getAppointmentsForDate,
+  cancelAppointment
 };
+

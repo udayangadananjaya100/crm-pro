@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const env = require('../config/environment');
 const logger = require('../utils/logger');
+const events = require('../utils/events');
 
 let io = null;
 
@@ -97,6 +98,28 @@ function initialize(httpServer) {
       });
       io.emit('connected_users', connectedClients.size);
     });
+  });
+
+  // Subscribe to appointment events on the local event emitter and broadcast to socket clients
+  events.on(events.APPOINTMENT_BOOKED, (data) => {
+    if (io) {
+      io.emit('appointment:update', { type: 'booked', appointment: data });
+      io.emit('stats:update', { trigger: 'appointment_booked' });
+    }
+  });
+
+  events.on(events.APPOINTMENT_CANCELLED, (data) => {
+    if (io) {
+      io.emit('appointment:update', { type: 'cancelled', appointment: data });
+      io.emit('stats:update', { trigger: 'appointment_cancelled' });
+    }
+  });
+
+  events.on(events.CAMPAIGN_UPDATED, (data) => {
+    if (io) {
+      io.emit('campaign:update', data);
+      io.emit('stats:update', { trigger: 'campaign_update' });
+    }
   });
 
   logger.info('✅ Real-time WebSocket server initialized');

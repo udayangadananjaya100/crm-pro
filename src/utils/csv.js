@@ -19,7 +19,17 @@ function jsonToCsv(data) {
   for (const row of data) {
     const values = headers.map(header => {
       const val = row[header];
-      const escaped = ('' + val).replace(/"/g, '""'); // Escape double quotes
+      let valStr = '';
+      if (val !== null && val !== undefined) {
+        if (val instanceof Date) {
+          valStr = val.toISOString();
+        } else if (typeof val === 'object') {
+          valStr = JSON.stringify(val);
+        } else {
+          valStr = String(val);
+        }
+      }
+      const escaped = valStr.replace(/"/g, '""'); // Escape double quotes
       return `"${escaped}"`; // Wrap in quotes to handle commas
     });
     csvRows.push(values.join(','));

@@ -23,9 +23,66 @@ function getDb() {
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
+
+    // Register custom array_cat function for PostgreSQL compatibility
+    db.function('array_cat', (tagsJson, newTagsJson) => {
+      try {
+        let current = [];
+        if (tagsJson && tagsJson !== '{}') {
+          if (tagsJson.startsWith('{') && tagsJson.endsWith('}')) {
+            current = tagsJson.substring(1, tagsJson.length - 1).split(',').map(s => s.trim()).filter(Boolean);
+          } else {
+            current = JSON.parse(tagsJson);
+          }
+        }
+        let added = [];
+        if (newTagsJson) {
+          if (newTagsJson.startsWith('{') && newTagsJson.endsWith('}')) {
+            added = newTagsJson.substring(1, newTagsJson.length - 1).split(',').map(s => s.trim()).filter(Boolean);
+          } else {
+            added = JSON.parse(newTagsJson);
+          }
+        }
+        if (!Array.isArray(current)) current = [];
+        if (!Array.isArray(added)) added = [added];
+        const combined = [...new Set([...current, ...added])];
+        return JSON.stringify(combined);
+      } catch (err) {
+        return tagsJson || '[]';
+      }
+    });
+
     logger.info(`✅ SQLite database opened: ${DB_PATH}`);
   }
   return db;
+}
+
+/**
+ * Helper to normalize row values from SQLite (e.g. parse JSON string back to arrays/objects)
+ */
+function normalizeRow(row) {
+  if (!row) return row;
+  const normalized = {};
+  for (const [key, val] of Object.entries(row)) {
+    const normKey = (key === 'COUNT(*)' || key.includes('count(')) ? 'count' : key;
+    let parsedVal = val;
+    if (typeof val === 'string' && (normKey === 'tags' || normKey === 'metadata' || normKey === 'flags')) {
+      try {
+        if (val === '{}') {
+          parsedVal = (normKey === 'tags' || normKey === 'flags') ? [] : {};
+        } else if ((normKey === 'tags' || normKey === 'flags') && val.startsWith('{') && val.endsWith('}')) {
+          // Parse postgres-style array text if present
+          parsedVal = val.substring(1, val.length - 1).split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+          parsedVal = JSON.parse(val);
+        }
+      } catch (e) {
+        parsedVal = (normKey === 'tags' || normKey === 'flags') ? [] : {};
+      }
+    }
+    normalized[normKey] = parsedVal;
+  }
+  return normalized;
 }
 
 /**
@@ -44,7 +101,17 @@ async function query(text, params = []) {
   while ((match = paramRegex.exec(sqliteText)) !== null) {
     const index = parseInt(match[1], 10) - 1;
     const val = params[index];
-    expandedParams.push(typeof val === 'boolean' ? (val ? 1 : 0) : (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val ?? null));
+    let finalVal = val;
+    if (typeof val === 'boolean') {
+      finalVal = val ? 1 : 0;
+    } else if (val instanceof Date) {
+      finalVal = val.toISOString();
+    } else if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
+      finalVal = JSON.stringify(val);
+    } else {
+      finalVal = val ?? null;
+    }
+    expandedParams.push(finalVal);
   }
   
   // Replace all $n with ?
@@ -61,22 +128,25 @@ async function query(text, params = []) {
     .replace(/UUID/g, 'TEXT')
     .replace(/DECIMAL\(\d+,\d+\)/g, 'REAL')
     .replace(/TEXT\[\]/g, 'TEXT')
-    .replace(/NOW\(\)\s*\+\s*INTERVAL\s*'([^']+)'/gi, "datetime('now', '+$1')")
-    .replace(/NOW\(\)\s*-\s*INTERVAL\s*'([^']+)'/gi, "datetime('now', '-$1')")
+    .replace(/NOW\(\)\s*\+\s*INTERVAL\s*'([^']+)'/gi, "(strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+$1'))")
+    .replace(/NOW\(\)\s*-\s*INTERVAL\s*'([^']+)'/gi, "(strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-$1'))")
     .replace(/INTERVAL\s*'([^']+)'/gi, "'+$1'")
-    .replace(/NOW\(\)/g, "(datetime('now'))")
+    .replace(/NOW\(\)/g, "(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))")
+    .replace(/CURRENT_TIMESTAMP/g, "(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))")
     .replace(/CURRENT_DATE/g, "date('now')")
     .replace(/GREATEST\((\d+),\s*([^)]+)\)/gi, 'MAX($1, $2)')
-    .replace(/array_cat\((\w+),\s*([^)]+)\)/gi, '$1')
+    // Removed array_cat regex replace to use custom SQLite registered function
     .replace(/NULLS\s+LAST/gi, '')
+    .replace(/ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS/gi, 'ADD COLUMN')
     .replace(/uuid_generate_v4\(\)/g, "(lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))))")
-    .replace(/ON CONFLICT \((\w+)\) DO NOTHING/g, 'ON CONFLICT ($1) DO NOTHING')
-    .replace(/RETURNING\s+\*/gi, '')
-    .replace(/RETURNING\s+[\w, ]+/gi, '');
+    .replace(/ON CONFLICT \((\w+)\) DO NOTHING/g, 'ON CONFLICT ($1) DO NOTHING');
 
   const trimmed = sqliteText.trim();
-  const isSelect = trimmed.toUpperCase().startsWith('SELECT') || trimmed.toUpperCase().startsWith('WITH');
-  const isInsert = trimmed.toUpperCase().startsWith('INSERT');
+  const upperTrimmed = trimmed.toUpperCase();
+  const isSelect = upperTrimmed.startsWith('SELECT') || upperTrimmed.startsWith('WITH');
+  const hasReturning = /RETURNING\s+/i.test(sqliteText);
+  const returnsData = isSelect || hasReturning;
+  const isInsert = upperTrimmed.startsWith('INSERT');
 
   try {
     // Safety check for parameter count
@@ -88,19 +158,10 @@ async function query(text, params = []) {
       if (expandedParams.length > expectedCount) expandedParams.length = expectedCount;
     }
 
-    if (isSelect) {
+    if (returnsData) {
       const stmt = conn.prepare(sqliteText);
       let rows = stmt.all(...expandedParams);
-      // Normalize COUNT(*) key to 'count' for PostgreSQL compat
-      rows = rows.map(row => {
-        const normalized = {};
-        for (const [key, val] of Object.entries(row)) {
-          const normKey = (key === 'COUNT(*)' || key.includes('count(')) ? 'count' : key;
-          normalized[normKey] = val;
-        }
-        return normalized;
-      });
-      return { rows, rowCount: rows.length };
+      return { rows: rows.map(normalizeRow), rowCount: rows.length };
     } else if (isInsert) {
       const stmt = conn.prepare(sqliteText);
       const info = stmt.run(...expandedParams);
@@ -108,28 +169,37 @@ async function query(text, params = []) {
       if (tableName && info.lastInsertRowid) {
         // Fetch the inserted row to mimic RETURNING *
         const row = conn.prepare(`SELECT * FROM ${tableName} WHERE rowid = ?`).get(info.lastInsertRowid);
-        return { rows: row ? [row] : [], rowCount: info.changes };
+        return { rows: row ? [normalizeRow(row)] : [], rowCount: info.changes };
       }
       return { rows: [], rowCount: info.changes };
     } else {
       // For multiple statements (common in migrations)
       const statements = sqliteText.split(';').filter(s => s.trim().length > 0);
       let lastInfo = { changes: 0 };
+      let paramOffset = 0;
       
       for (const s of statements) {
+        const upperS = s.toUpperCase();
+        if (upperS.includes('CREATE EXTENSION') ||
+            upperS.includes('CREATE OR REPLACE FUNCTION') ||
+            upperS.includes('CREATE TRIGGER') ||
+            upperS.includes('DROP TRIGGER') ||
+            upperS.includes('PLPGSQL')) {
+          continue;
+        }
+
         try {
           const stmt = conn.prepare(s);
-          lastInfo = stmt.run(...expandedParams);
+          const placeholderCount = (s.match(/\?/g) || []).length;
+          const sParams = expandedParams.slice(paramOffset, paramOffset + placeholderCount);
+          paramOffset += placeholderCount;
+          lastInfo = stmt.run(...sParams);
         } catch (err) {
-          // If it's a PG-specific command we want to skip
-          if (err.message.includes('CREATE EXTENSION') ||
-              err.message.includes('EXTENSION') ||
-              err.message.includes('CREATE OR REPLACE FUNCTION') ||
-              err.message.includes('CREATE TRIGGER') ||
-              err.message.includes('TRIGGER') ||
-              err.message.includes('FUNCTION') ||
-              err.message.includes('EXECUTE') ||
-              err.message.includes('language')) {
+          const isAlterTable = upperS.includes('ALTER TABLE');
+          const isDuplicateColumn = err.message.includes('duplicate column name');
+          const isSyntaxErrorNearExists = err.message.includes('near "EXISTS"');
+          
+          if (isAlterTable && (isDuplicateColumn || isSyntaxErrorNearExists)) {
             continue;
           }
           throw err;
@@ -138,14 +208,12 @@ async function query(text, params = []) {
       return { rows: [], rowCount: lastInfo.changes };
     }
   } catch (err) {
-    // Silently skip certain PostgreSQL-specific operations
-    if (err.message.includes('CREATE EXTENSION') ||
-        err.message.includes('EXTENSION') ||
-        err.message.includes('CREATE OR REPLACE FUNCTION') ||
-        err.message.includes('CREATE TRIGGER') ||
-        err.message.includes('TRIGGER') ||
-        err.message.includes('FUNCTION') ||
-        err.message.includes('language')) {
+    const upperText = text.toUpperCase();
+    if (upperText.includes('CREATE EXTENSION') ||
+        upperText.includes('CREATE OR REPLACE FUNCTION') ||
+        upperText.includes('CREATE TRIGGER') ||
+        upperText.includes('DROP TRIGGER') ||
+        upperText.includes('PLPGSQL')) {
       return { rows: [], rowCount: 0 };
     }
     logger.error('SQLite query error:', { error: err.message, sql: sqliteText.substring(0, 200) });
@@ -164,12 +232,27 @@ function extractTableName(sql) {
   return null;
 }
 
+let transactionQueue = Promise.resolve();
+
 /**
  * Transaction support
  * Note: better-sqlite3 transactions are synchronous, but our query() is async.
  * We manually wrap BEGIN/COMMIT/ROLLBACK to support async callbacks.
+ * Serialized via a queue mutex to prevent interleaving transaction blocks.
  */
 async function transaction(callback) {
+  const currentQueue = transactionQueue;
+  let resolveQueue;
+  transactionQueue = new Promise((resolve) => {
+    resolveQueue = resolve;
+  });
+
+  try {
+    await currentQueue;
+  } catch (e) {
+    // Ignore error of previous transaction, we just want to wait for it to finish
+  }
+
   const conn = getDb();
   conn.exec('BEGIN');
   try {
@@ -186,8 +269,14 @@ async function transaction(callback) {
     conn.exec('COMMIT');
     return result;
   } catch (err) {
-    conn.exec('ROLLBACK');
+    try {
+      conn.exec('ROLLBACK');
+    } catch (rollErr) {
+      logger.error('SQLite transaction rollback failed:', rollErr.message);
+    }
     throw err;
+  } finally {
+    resolveQueue();
   }
 }
 
@@ -197,7 +286,7 @@ async function transaction(callback) {
 async function healthCheck() {
   try {
     const conn = getDb();
-    const row = conn.prepare("SELECT datetime('now') as current_time").get();
+    const row = conn.prepare("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') as current_time").get();
     return { status: 'healthy', timestamp: row.current_time, engine: 'sqlite' };
   } catch (err) {
     return { status: 'unhealthy', error: err.message, engine: 'sqlite' };
@@ -226,9 +315,10 @@ function initSchema() {
       opt_in_analytics INTEGER DEFAULT 0,
       language_preference TEXT DEFAULT 'en',
       last_message_at TEXT,
+      notes TEXT,
       metadata TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS conversations (
@@ -247,9 +337,11 @@ function initSchema() {
       resolved_at TEXT,
       sla_breached INTEGER DEFAULT 0,
       message_count INTEGER DEFAULT 0,
+      csat_score INTEGER,
+      csat_comment TEXT,
       metadata TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -257,10 +349,11 @@ function initSchema() {
       conversation_id TEXT NOT NULL REFERENCES conversations(id),
       contact_id TEXT NOT NULL REFERENCES contacts(id),
       whatsapp_message_id TEXT,
-      direction TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),
-      message_type TEXT NOT NULL DEFAULT 'text',
+      direction TEXT NOT NULL CHECK (direction IN ('inbound','outbound','internal')),
+      message_type TEXT NOT NULL DEFAULT 'text' CHECK (message_type IN ('text', 'image', 'document', 'audio', 'video', 'sticker', 'template', 'interactive', 'reaction', 'transfer', 'system')),
       content TEXT,
       content_masked TEXT,
+      transcription TEXT,
       media_url TEXT,
       template_name TEXT,
       status TEXT DEFAULT 'received',
@@ -268,8 +361,10 @@ function initSchema() {
       confidence REAL,
       ai_generated INTEGER DEFAULT 0,
       pii_detected INTEGER DEFAULT 0,
+      feedback_score INTEGER,
+      feedback_note TEXT,
       metadata TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS agents (
@@ -284,8 +379,8 @@ function initSchema() {
       active_conversations INTEGER DEFAULT 0,
       last_active_at TEXT,
       metadata TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -302,7 +397,7 @@ function initSchema() {
       output_summary TEXT,
       response_time_ms INTEGER,
       metadata TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS opt_out_log (
@@ -311,7 +406,7 @@ function initSchema() {
       action TEXT NOT NULL CHECK (action IN ('opt_out','opt_in')),
       keyword_used TEXT,
       channel TEXT DEFAULT 'whatsapp',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -320,8 +415,8 @@ function initSchema() {
       category TEXT NOT NULL DEFAULT 'general',
       description TEXT,
       is_public INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS knowledge_documents (
@@ -333,8 +428,8 @@ function initSchema() {
       status TEXT DEFAULT 'pending',
       total_chunks INTEGER DEFAULT 0,
       metadata TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE TABLE IF NOT EXISTS knowledge_chunks (
@@ -344,7 +439,7 @@ function initSchema() {
       embedding TEXT,
       chunk_index INTEGER,
       metadata TEXT DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc ON knowledge_chunks(document_id);
@@ -358,7 +453,7 @@ function initSchema() {
       appointment_time TEXT NOT NULL,
       reason TEXT,
       status TEXT DEFAULT 'confirmed',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       FOREIGN KEY (contact_id) REFERENCES contacts(id)
     );
 
@@ -373,7 +468,7 @@ function initSchema() {
       status TEXT DEFAULT 'draft',
       total_recipients INTEGER DEFAULT 0,
       sent_count INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       last_sent_at TEXT
     );
 
@@ -383,7 +478,7 @@ function initSchema() {
       contact_id TEXT NOT NULL,
       message_id TEXT,
       status TEXT,
-      sent_at TEXT DEFAULT (datetime('now')),
+      sent_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
       FOREIGN KEY (contact_id) REFERENCES contacts(id)
     );
@@ -396,10 +491,95 @@ function initSchema() {
       target_role TEXT,
       target_agent_id TEXT,
       is_read INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
+
+    CREATE TABLE IF NOT EXISTS shift_logs (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6)))),
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      start_time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      end_time TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shift_logs_agent ON shift_logs(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_shift_logs_status ON shift_logs(status);
+    CREATE INDEX IF NOT EXISTS idx_shift_logs_start ON shift_logs(start_time);
+
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6)))),
+      target_url TEXT NOT NULL,
+      events TEXT NOT NULL,
+      secret TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_webhooks_active ON webhooks(is_active);
+
+    CREATE TABLE IF NOT EXISTS canned_responses (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6)))),
+      shortcut TEXT NOT NULL UNIQUE,
+      content TEXT NOT NULL,
+      category TEXT DEFAULT 'General',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_canned_responses_category ON canned_responses(category);
+
+    CREATE TABLE IF NOT EXISTS scheduled_messages (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6)))),
+      conversation_id TEXT NOT NULL,
+      contact_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
+      scheduled_for TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_messages_status ON scheduled_messages(status);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_messages_scheduled_for ON scheduled_messages(scheduled_for);
   `);
 
+  try {
+    conn.exec('ALTER TABLE contacts ADD COLUMN notes TEXT;');
+  } catch (err) {
+    if (!err.message.includes('duplicate column name')) {
+      logger.error('Failed to alter contacts table in SQLite:', err.message);
+    }
+  }
+
+  try {
+    conn.exec('ALTER TABLE conversations ADD COLUMN csat_score INTEGER;');
+  } catch (err) {
+    if (!err.message.includes('duplicate column name')) {
+      logger.error('Failed to alter conversations table (csat_score) in SQLite:', err.message);
+    }
+  }
+
+  try {
+    conn.exec('ALTER TABLE conversations ADD COLUMN csat_comment TEXT;');
+  } catch (err) {
+    if (!err.message.includes('duplicate column name')) {
+      logger.error('Failed to alter conversations table (csat_comment) in SQLite:', err.message);
+    }
+  }
+  try {
+    conn.prepare(`
+      INSERT OR IGNORE INTO settings (key, value, category, description, is_public)
+      VALUES 
+        ('VISUAL_FLOW_LAYOUT', '{"nodes":[],"edges":[]}', 'general', 'Layout JSON representation of visual routing builder nodes and links.', 1),
+        ('TELEGRAM_BOT_TOKEN', 'mock-telegram-bot-token-12345', 'routing', 'Bot Token for Telegram Bot API integration.', 0),
+        ('MESSENGER_PAGE_TOKEN', 'mock-messenger-page-token-12345', 'routing', 'Page Access Token for FB Messenger integration.', 0);
+    `).run();
+  } catch (err) {
+    logger.error('Failed to seed settings in SQLite:', err.message);
+  }
 
   logger.info('✅ SQLite schema initialized');
 }

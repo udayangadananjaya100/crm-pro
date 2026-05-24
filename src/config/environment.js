@@ -28,8 +28,9 @@ const env = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
 
   // Auth
-  JWT_SECRET: process.env.JWT_SECRET,
+  JWT_SECRET: process.env.JWT_SECRET || 'dev_fallback_secret_key_12345',
   JWT_EXPIRY: process.env.JWT_EXPIRY || '24h',
+  ADMIN_DASHBOARD_URL: process.env.ADMIN_DASHBOARD_URL || 'http://localhost:3000',
 
   // Notifications
   MANAGER_EMAIL: process.env.MANAGER_EMAIL,
@@ -54,6 +55,7 @@ function validateEnv() {
     'WEBHOOK_VERIFY_TOKEN',
     'GEMINI_API_KEY',
     'JWT_SECRET',
+    'ADMIN_DASHBOARD_URL',
   ];
 
   const missing = required.filter((key) => !env[key]);

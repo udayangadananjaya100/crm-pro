@@ -22,13 +22,17 @@ async function findOrCreateConversation(contactId) {
   );
 
   if (existing.rows.length > 0) {
+    const wasOutside = new Date(existing.rows[0].window_expires_at) < new Date();
     // Extend the conversational window
-    await query(
+    const result = await query(
       `UPDATE conversations SET window_expires_at = NOW() + INTERVAL '24 hours', updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+       RETURNING *`,
       [existing.rows[0].id]
     );
-    return existing.rows[0];
+    const conv = result.rows[0] || existing.rows[0];
+    conv._was_outside_window = wasOutside;
+    return conv;
   }
 
   // Create new conversation
@@ -44,7 +48,9 @@ async function findOrCreateConversation(contactId) {
     contactId,
   });
 
-  return result.rows[0];
+  const conv = result.rows[0];
+  conv._was_outside_window = false;
+  return conv;
 }
 
 /**
@@ -146,7 +152,7 @@ async function storeOutboundMessage(conversationId, contactId, {
  */
 async function getConversationHistory(conversationId, limit = 10) {
   const result = await query(
-    `SELECT direction, content, message_type, intent, ai_generated, created_at
+    `SELECT id, direction, content, message_type, intent, ai_generated, created_at
      FROM messages
      WHERE conversation_id = $1
      ORDER BY created_at DESC
@@ -206,7 +212,13 @@ async function assignConversation(conversationId, { team, agentId, intent, prior
     params
   );
 
-  return result.rows[0];
+  let conversation = result.rows[0];
+  if (!conversation) {
+    const fetchResult = await query("SELECT * FROM conversations WHERE id = $1", [conversationId]);
+    conversation = fetchResult.rows[0];
+  }
+
+  return conversation;
 }
 
 /**
@@ -230,13 +242,18 @@ async function closeConversation(conversationId, notes = '') {
     [conversationId, notes]
   );
 
+  let conv = result.rows[0];
+  if (!conv) {
+    const fetchResult = await query("SELECT * FROM conversations WHERE id = $1", [conversationId]);
+    conv = fetchResult.rows[0];
+  }
+
   // Trigger CSAT Survey (Phase 5)
-  if (result.rows[0]) {
-    const conv = result.rows[0];
+  if (conv) {
     csatService.sendCSATSurvey(conv.id, conv.contact_id, null); // Phone would be fetched in production
   }
 
-  return result.rows[0];
+  return conv;
 }
 
 /**
@@ -272,7 +289,7 @@ async function listConversations({ page = 1, limit = 20, status, team, priority,
   const total = parseInt(countResult.rows[0].count, 10);
 
   const result = await query(
-    `SELECT c.*, ct.display_name as contact_name, ct.phone_number_masked
+    `SELECT c.*, ct.display_name as contact_name, ct.phone_number, ct.phone_number_masked
      FROM conversations c
      LEFT JOIN contacts ct ON c.contact_id = ct.id
      ${where}
@@ -291,28 +308,51 @@ async function listConversations({ page = 1, limit = 20, status, team, priority,
 
   return { conversations: result.rows, total, page, totalPages: Math.ceil(total / limit) };
 }
-
 /**
  * Transfer a conversation to another team
  */
 async function transferConversation(conversationId, team, note, agentId) {
   return await transaction(async (client) => {
-    // 1. Update conversation assignment
+    // 1. Fetch the conversation to get contact_id
+    const convResult = await client.query(
+      `SELECT contact_id FROM conversations WHERE id = $1`,
+      [conversationId]
+    );
+    const contactId = convResult.rows[0]?.contact_id;
+
+    if (!contactId) {
+      throw new Error(`Conversation ${conversationId} contact not found`);
+    }
+
+    // 2. Update conversation assignment
     await client.query(
       `UPDATE conversations SET assigned_team = $1, assigned_agent_id = NULL, updated_at = NOW() WHERE id = $2`,
       [team, conversationId]
     );
 
-    // 2. Add an internal system message/note about the transfer
+    // 3. Add an internal system message/note about the transfer
     await client.query(
-      `INSERT INTO messages (conversation_id, direction, message_type, content, status, ai_generated)
-       VALUES ($1, 'internal', 'transfer', $2, 'received', false)`,
-      [conversationId, `Handover to ${team}: ${note || 'No notes provided.'}`]
+      `INSERT INTO messages (conversation_id, contact_id, direction, message_type, content, status, ai_generated)
+       VALUES ($1, $2, 'internal', 'transfer', $3, 'received', false)`,
+      [conversationId, contactId, `Handover to ${team}: ${note || 'No notes provided.'}`]
     );
 
     logger.info('Conversation transferred', { conversationId, team, agentId });
     return true;
   });
+}
+
+async function updateConversationPriority(conversationId, priority) {
+  const result = await query(
+    `UPDATE conversations SET priority = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+    [priority, conversationId]
+  );
+  let conversation = result.rows[0];
+  if (!conversation) {
+    const fetchResult = await query("SELECT * FROM conversations WHERE id = $1", [conversationId]);
+    conversation = fetchResult.rows[0];
+  }
+  return conversation;
 }
 
 module.exports = {
@@ -326,4 +366,5 @@ module.exports = {
   closeConversation,
   listConversations,
   transferConversation,
+  updateConversationPriority,
 };

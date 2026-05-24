@@ -71,8 +71,27 @@ async function cacheDel(key) {
  */
 async function healthCheck() {
   try {
-    const pong = await getRedis().ping();
-    return { status: pong === 'PONG' ? 'healthy' : 'unhealthy' };
+    const client = getRedis();
+    const pong = await client.ping();
+    if (pong !== 'PONG') {
+      return { status: 'unhealthy', error: 'Ping failed' };
+    }
+    
+    // Check version compatibility (BullMQ requires Redis >= 5.0.0)
+    const info = await client.info();
+    const versionMatch = info.match(/redis_version:([0-9\.]+)/);
+    if (versionMatch) {
+      const version = versionMatch[1];
+      const major = parseInt(version.split('.')[0], 10);
+      if (major < 5) {
+        return { 
+          status: 'unhealthy', 
+          error: `Redis version ${version} is incompatible. BullMQ requires version >= 5.0.0.` 
+        };
+      }
+    }
+    
+    return { status: 'healthy' };
   } catch (err) {
     return { status: 'unhealthy', error: err.message };
   }

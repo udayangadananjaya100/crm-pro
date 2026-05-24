@@ -26,7 +26,7 @@ router.use((req, res, next) => {
  */
 router.post('/simulate', async (req, res) => {
   try {
-    const { phone, text, name } = req.body;
+    const { phone, text, name, aiOverrides } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: 'text field is required' });
@@ -44,7 +44,10 @@ router.post('/simulate', async (req, res) => {
 
     logger.info('🧪 Test message simulation', { from: messageData.from.slice(-4), text: text.substring(0, 50), bypassRules: !!req.body.bypassRules });
 
-    const result = await processMessage(messageData, { bypassRules: !!req.body.bypassRules });
+    const result = await processMessage(messageData, { 
+      bypassRules: !!req.body.bypassRules,
+      aiOverrides: aiOverrides
+    });
 
     // Emit real-time events
     realtime.emitNewMessage({
@@ -63,6 +66,62 @@ router.post('/simulate', async (req, res) => {
     });
   } catch (err) {
     logger.error('Simulation error', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/test/trigger-sla-breach
+ * Trigger a simulated SLA breach on an active conversation.
+ */
+router.post('/trigger-sla-breach', async (req, res) => {
+  try {
+    const { query } = require('../config/database');
+    const notificationService = require('../services/notification');
+
+    // Find the latest open/assigned/pending conversation
+    const result = await query(`
+      SELECT id, assigned_team, status
+      FROM conversations
+      WHERE status IN ('open', 'assigned', 'pending')
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `);
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'No active conversations found to breach' });
+    }
+
+    const conv = result.rows[0];
+
+    // Mark as breached and upgrade priority
+    await query(
+      "UPDATE conversations SET sla_breached = 1, priority = 'high' WHERE id = $1",
+      [conv.id]
+    );
+
+    const team = conv.assigned_team || 'general';
+    
+    // Trigger notification
+    await notificationService.alertSLABreach(
+      conv.id,
+      team,
+      'Manual Test SLA Breach'
+    );
+
+    // Emit real-time update event
+    realtime.emitSLABreach({
+      conversationId: conv.id,
+      team: team,
+      type: 'Manual Test SLA Breach'
+    });
+
+    res.json({
+      success: true,
+      message: `SLA breach simulated successfully for conversation ${conv.id}`
+    });
+  } catch (err) {
+    logger.error('Failed to simulate SLA breach', { error: err.message });
     res.status(500).json({ error: err.message });
   }
 });
@@ -153,6 +212,21 @@ router.get('/intents', (req, res) => {
   }));
 
   res.json({ tests: results });
+});
+
+/**
+ * POST /api/test/process-scheduled
+ * Manually trigger the scheduled message processing runner
+ */
+router.post('/process-scheduled', async (req, res) => {
+  try {
+    const { processPendingMessages } = require('../agents/scheduledMessageRunner');
+    await processPendingMessages();
+    res.json({ success: true, message: 'Scheduled message processing triggered.' });
+  } catch (err) {
+    logger.error('Failed to trigger scheduled message processing', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -61,11 +61,13 @@ async function seed() {
     ];
 
     for (const c of contacts) {
+      const hoursAgo = Math.floor(Math.random() * 48);
+      const lastMessageAt = new Date(Date.now() - hoursAgo * 60 * 60 * 1000);
       await query(
         `INSERT INTO contacts (phone_number, phone_number_masked, display_name, language_preference, lead_score, status, last_message_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', datetime('now', '-' || $6 || ' hours'))
+         VALUES ($1, $2, $3, $4, $5, 'active', $6)
          ON CONFLICT (phone_number) DO NOTHING`,
-        [c.phone, `***-***-${c.phone.slice(-4)}`, c.name, c.lang, c.score, Math.floor(Math.random() * 48).toString()]
+        [c.phone, `***-***-${c.phone.slice(-4)}`, c.name, c.lang, c.score, lastMessageAt]
       );
     }
     logger.info(`✅ ${contacts.length} sample contacts created`);
@@ -87,11 +89,13 @@ async function seed() {
       const priority = priorityOptions[i % priorityOptions.length];
       const status = statusOptions[i % statusOptions.length];
       const msgCount = Math.floor(Math.random() * 10) + 1;
+      const windowExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
       const convResult = await query(
         `INSERT INTO conversations (contact_id, status, assigned_team, intent, priority, window_expires_at, message_count)
-         VALUES ($1, $2, $3, $4, $5, datetime('now', '+24 hours'), $6)`,
-        [contact.id, status, team, intent, priority, msgCount]
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [contact.id, status, team, intent, priority, windowExpiresAt, msgCount]
       );
 
       const convId = convResult.rows[0]?.id;
@@ -138,6 +142,27 @@ async function seed() {
       );
     }
     logger.info(`✅ ${auditEntries.length} audit log entries created`);
+
+    // ─────────────────────────────────
+    // 6. Create Canned Responses
+    // ─────────────────────────────────
+    const cannedResponses = [
+      { shortcut: 'greet', category: 'General', content: 'வணக்கம் / Hello! Welcome to Pro CRM. How can we help you today? / ඔබට අද අපෙන් සිදුවිය යුතු සේවාව කුමක්ද?' },
+      { shortcut: 'pricing', category: 'Sales', content: 'Here are our pricing plans:\n- Basic: LKR 5,000/mo\n- Premium: LKR 15,000/mo\n- Enterprise: Custom pricing.' },
+      { shortcut: 'hours', category: 'General', content: 'Our business hours are Monday to Friday, 8:30 AM to 5:30 PM.' },
+      { shortcut: 'payment', category: 'Billing', content: 'You can make payments via bank transfer to:\nBank: Sampath Bank\nAccount: 1234-5678-9012\nBranch: Colombo Fort.' },
+      { shortcut: 'support', category: 'Support', content: 'Our support lead has been notified. An agent will contact you shortly.' }
+    ];
+
+    for (const r of cannedResponses) {
+      await query(
+        `INSERT INTO canned_responses (shortcut, content, category)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (shortcut) DO NOTHING`,
+        [r.shortcut, r.content, r.category]
+      );
+    }
+    logger.info(`✅ ${cannedResponses.length} sample canned responses created`);
 
     logger.info('');
     logger.info('╔══════════════════════════════════════════════╗');

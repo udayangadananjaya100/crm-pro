@@ -18,22 +18,31 @@ async function startShift(agentId, notes = '') {
 
 async function endShift(agentId) {
   const result = await query(
-    'UPDATE shift_logs SET end_time = NOW(), status = "completed" WHERE agent_id = $1 AND status = "active" RETURNING *',
+    "UPDATE shift_logs SET end_time = NOW(), status = 'completed' WHERE agent_id = $1 AND status = 'active' RETURNING *",
     [agentId]
   );
   
-  if (result.rows.length === 0) {
+  let shift = result.rows[0];
+  if (!shift) {
+    // SQLite fallback: since RETURNING * is not supported, find the recently updated shift
+    const fetchResult = await query(
+      "SELECT * FROM shift_logs WHERE agent_id = $1 AND status = 'completed' ORDER BY start_time DESC LIMIT 1",
+      [agentId]
+    );
+    shift = fetchResult.rows[0];
+  }
+
+  if (!shift) {
     throw new Error('No active shift found');
   }
 
-  const shift = result.rows[0];
   logger.info('Agent clocked out', { agentId, shiftId: shift.id });
   return shift;
 }
 
 async function getActiveShift(agentId) {
   const result = await query(
-    'SELECT * FROM shift_logs WHERE agent_id = $1 AND status = "active" ORDER BY start_time DESC LIMIT 1',
+    "SELECT * FROM shift_logs WHERE agent_id = $1 AND status = 'active' ORDER BY start_time DESC LIMIT 1",
     [agentId]
   );
   return result.rows[0];

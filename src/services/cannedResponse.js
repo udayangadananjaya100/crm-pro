@@ -25,6 +25,16 @@ async function createCannedResponse({ shortcut, content, category }) {
     );
     return { id, shortcut, content, category };
   } catch (err) {
+    if (err.message?.includes('UNIQUE') || err.code === '23505') {
+      const existing = await query('SELECT * FROM canned_responses WHERE shortcut = $1', [shortcut]);
+      if (existing.rows[0]) {
+        await query(
+          'UPDATE canned_responses SET content = $1, category = $2 WHERE shortcut = $3',
+          [content, category || 'General', shortcut]
+        );
+        return { id: existing.rows[0].id, shortcut, content, category: category || 'General' };
+      }
+    }
     logger.error('Error creating canned response', { error: err.message });
     throw err;
   }
