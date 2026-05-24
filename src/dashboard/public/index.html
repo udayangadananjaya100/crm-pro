@@ -446,13 +446,11 @@
                                 <div id="funnel-container" class="funnel-viz">
                                     <!-- Funnel injected here -->
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- AI Metrics Card -->
+                                 <!-- AI Metrics Card -->
                         <div class="card bg-glass">
                             <div class="card-header">
                                 <h3>AI Efficiency</h3>
+                                <p style="font-size: 0.75rem; color: var(--text-muted);">AI performance and auto-resolution metrics</p>
                             </div>
                             <div class="card-body">
                                 <div class="ai-metric-grid">
@@ -470,6 +468,33 @@
                                         <label>AI Accuracy (Est.)</label>
                                         <div class="ai-metric-value" id="ai-accuracy">0%</div>
                                         <div class="progress-bar"><div id="ai-accuracy-progress" style="width: 0%; background: var(--accent-purple);"></div></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Operations & SLA KPIs Card -->
+                        <div class="card bg-glass">
+                            <div class="card-header">
+                                <h3>Operations & SLA KPIs</h3>
+                                <p style="font-size: 0.75rem; color: var(--text-muted);">SLA breaches, response times, and customer satisfaction</p>
+                            </div>
+                            <div class="card-body">
+                                <div class="ai-metric-grid">
+                                    <div class="ai-metric-item">
+                                        <label>SLA Breach Rate</label>
+                                        <div class="ai-metric-value" id="metric-sla-breach">0%</div>
+                                        <div class="progress-bar"><div id="sla-breach-progress" style="width: 0%; background: var(--accent-orange);"></div></div>
+                                    </div>
+                                    <div class="ai-metric-item">
+                                        <label>Avg. Response Time</label>
+                                        <div class="ai-metric-value" id="metric-avg-response">0 min</div>
+                                        <div class="progress-bar"><div id="avg-response-progress" style="width: 0%; background: var(--accent-blue);"></div></div>
+                                    </div>
+                                    <div class="ai-metric-item">
+                                        <label>Customer Satisfaction (CSAT)</label>
+                                        <div class="ai-metric-value" id="metric-csat">0.0 / 5</div>
+                                        <div class="progress-bar"><div id="csat-progress" style="width: 0%; background: var(--accent-green);"></div></div>
                                     </div>
                                 </div>
                             </div>
@@ -760,6 +785,12 @@
                     <div class="header-left">
                         <h2>AI Appointments</h2>
                         <p>Manage bookings and meetings scheduled by the Autonomous AI Agent</p>
+                    </div>
+                    <div class="header-right">
+                        <button class="btn btn-primary" onclick="showNewAppointmentModal()">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            New Appointment
+                        </button>
                     </div>
                 </div>
                 <div class="data-card">
@@ -1669,6 +1700,40 @@
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('campaign-modal')">Cancel</button>
                 <button class="btn btn-primary" onclick="handleCreateCampaign()">Create Campaign</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Appointment Booking Modal -->
+    <div id="booking-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Schedule New Appointment</h3>
+                <button class="btn-icon" onclick="closeModal('booking-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Contact</label>
+                    <select id="booking-contact-id" class="form-input">
+                        <!-- Loaded via JS -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="booking-date" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Time</label>
+                    <input type="time" id="booking-time" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Reason / Notes</label>
+                    <input type="text" id="booking-reason" class="form-input" placeholder="e.g. Discuss premium pricing plan">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('booking-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="handleCreateAppointment()">Create Appointment</button>
             </div>
         </div>
     </div>

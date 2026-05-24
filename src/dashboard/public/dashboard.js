@@ -1264,6 +1264,18 @@ async function loadRightPanelIntelligence(contactId) {
         <div style="font-size:0.8rem; color:var(--text-muted);">Loading insights...</div>
       </div>
     </div>
+    <div class="right-panel-section" id="copilot-panel">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+        <h4 style="margin:0;">AI Co-pilot</h4>
+        <span id="copilot-sentiment-badge" class="badge badge-gray" style="font-size:0.65rem;">Neutral</span>
+      </div>
+      <div class="right-detail-box" style="display:flex; flex-direction:column; gap:8px;">
+        <div id="copilot-suggestion-text" style="font-size:0.8rem; line-height:1.4; color:var(--text-secondary);">
+          Generating AI response suggestion... 🤖
+        </div>
+        <button class="btn btn-primary btn-xs" onclick="useCopilotSuggestion()" style="width:100%; padding:6px; font-size:0.75rem;">Use Suggestion</button>
+      </div>
+    </div>
   `;
 
   // Fetch contact details
@@ -1318,6 +1330,9 @@ async function loadRightPanelIntelligence(contactId) {
   } else if (insightsBox) {
     insightsBox.innerHTML = '<div style="font-size:0.8rem; color:var(--text-muted);">AI insights unavailable</div>';
   }
+  
+  // Auto-load Co-pilot AI suggestion
+  loadCopilotSuggestion();
 }
 
 async function handleChatSubmit(e) {
