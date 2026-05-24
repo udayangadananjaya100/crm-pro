@@ -2,7 +2,9 @@
  * Pro CRM — Admin Dashboard JavaScript
  */
 
-const API_BASE = window.location.origin;
+const API_BASE = (window.location.origin && window.location.origin !== 'null' && window.location.origin.startsWith('http')) 
+  ? window.location.origin 
+  : 'http://localhost:3000';
 let authToken = localStorage.getItem('procrm_token');
 let currentUser = null;
 try {

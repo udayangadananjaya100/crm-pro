@@ -107,6 +107,9 @@ app.get('/admin/*', (req, res) => {
 // Root route
 // ─────────────────────────────────────
 app.get('/', (req, res) => {
+  if (req.accepts('html')) {
+    return res.redirect('/admin/');
+  }
   res.json({
     name: 'Pro CRM',
     version: '2.1.0',
