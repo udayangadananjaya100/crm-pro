@@ -4,7 +4,7 @@
 const axios = require('axios');
 const productService = require('../src/services/product');
 const geminiService = require('../src/services/gemini');
-const { initializeDatabase, close } = require('../src/config/database');
+const { initializeDatabase, close, query } = require('../src/config/database');
 const { loadAllRules } = require('../src/utils/rulesLoader');
 const logger = require('../src/utils/logger');
 
@@ -17,6 +17,7 @@ async function runTests() {
 
   let adminToken = '';
   let testProductId = '';
+  let syncedKbDocId = '';
 
   try {
     // Initialize database connection and rules loader
@@ -51,6 +52,26 @@ async function runTests() {
     testProductId = createRes.data.id;
     console.log(`✅ API: Created product "${createRes.data.name}". ID: ${testProductId}`);
 
+    // Assert Knowledge Base sync on create
+    const kbDocCheck = await query("SELECT id, status, metadata FROM knowledge_documents WHERE doc_type = 'product'");
+    let foundKbDoc = null;
+    for (const row of kbDocCheck.rows) {
+      let meta = row.metadata;
+      if (typeof meta === 'string') {
+        try { meta = JSON.parse(meta); } catch (e) { meta = {}; }
+      }
+      if (meta && meta.product_id === testProductId) {
+        foundKbDoc = row;
+        break;
+      }
+    }
+    if (foundKbDoc && foundKbDoc.status === 'active') {
+      syncedKbDocId = foundKbDoc.id;
+      console.log(`✅ Knowledge Base: Document synced successfully on product creation. ID: ${syncedKbDocId}`);
+    } else {
+      throw new Error('Knowledge Base document sync failed on creation');
+    }
+
     // 4. Update the product details
     const updatePayload = {
       name: 'Updated Test Auto Insurance',
@@ -62,6 +83,14 @@ async function runTests() {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`✅ API: Updated product name: "${updateRes.data.name}", Price: ${updateRes.data.price}`);
+
+    // Assert Knowledge Base sync on update
+    const kbDocCheckUpdate = await query("SELECT id, title FROM knowledge_documents WHERE id = $1", [syncedKbDocId]);
+    if (kbDocCheckUpdate.rows.length > 0 && kbDocCheckUpdate.rows[0].title === 'Product: Updated Test Auto Insurance') {
+      console.log(`✅ Knowledge Base: Document title synced successfully on update. Title: "${kbDocCheckUpdate.rows[0].title}"`);
+    } else {
+      throw new Error('Knowledge Base title sync failed on update');
+    }
 
     // 5. Verify the product is loaded in active products text
     const activeProducts = await productService.listProducts();
@@ -100,6 +129,14 @@ async function runTests() {
     });
     console.log(`✅ API: Toggled product active status to: ${toggleRes.data.is_active}`);
 
+    // Assert Knowledge Base sync on toggle
+    const kbDocCheckToggle = await query("SELECT status FROM knowledge_documents WHERE id = $1", [syncedKbDocId]);
+    if (kbDocCheckToggle.rows.length > 0 && kbDocCheckToggle.rows[0].status === 'inactive') {
+      console.log(`✅ Knowledge Base: Document status toggled to "inactive" successfully.`);
+    } else {
+      throw new Error('Knowledge Base status toggle sync failed');
+    }
+
     // Verify it is off
     const activeProductsAfter = await productService.listProducts();
     const testProdAfter = activeProductsAfter.find(p => p.id === testProductId);
@@ -114,6 +151,14 @@ async function runTests() {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`✅ API: Deleted product. Success: ${deleteRes.data.success}`);
+
+    // Assert Knowledge Base sync on delete
+    const kbDocCheckDelete = await query("SELECT id FROM knowledge_documents WHERE id = $1", [syncedKbDocId]);
+    if (kbDocCheckDelete.rows.length === 0) {
+      console.log(`✅ Knowledge Base: Document deleted successfully.`);
+    } else {
+      throw new Error('Knowledge Base document delete sync failed');
+    }
 
     console.log('\n══════════════════════════════════════════════════════');
     console.log('  🎉 RESULTS: ALL PRODUCTS & SERVICES TESTS PASSED!   ');

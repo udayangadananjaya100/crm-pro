@@ -130,8 +130,13 @@ async function addDocument({ title, content, type = 'manual_entry', sourceUrl = 
       if (isMock) {
         embedding = getMockEmbedding(chunk);
       } else {
-        const result = await model.embedContent(chunk);
-        embedding = result.embedding.values;
+        try {
+          const result = await model.embedContent(chunk);
+          embedding = result.embedding.values;
+        } catch (embedErr) {
+          logger.warn(`Failed to generate Gemini embedding, using mock fallback: ${embedErr.message}`);
+          embedding = getMockEmbedding(chunk);
+        }
       }
 
       await db.query(
@@ -186,8 +191,13 @@ async function updateDocument(docId, newContent) {
       if (isMock) {
         embedding = getMockEmbedding(chunk);
       } else {
-        const result = await model.embedContent(chunk);
-        embedding = result.embedding.values;
+        try {
+          const result = await model.embedContent(chunk);
+          embedding = result.embedding.values;
+        } catch (embedErr) {
+          logger.warn(`Failed to generate Gemini embedding, using mock fallback: ${embedErr.message}`);
+          embedding = getMockEmbedding(chunk);
+        }
       }
 
       await db.query(
