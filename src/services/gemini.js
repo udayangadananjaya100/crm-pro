@@ -162,9 +162,22 @@ async function generateResponse({ messageText, conversationHistory, intent, lang
     const { findRelevantContext } = require('./knowledge');
     const dynamicContext = await findRelevantContext(messageText || (mediaData ? 'Analyze image' : ''), 3);
 
+    // Fetch active products/services for marketing
+    let activeProductsText = '';
+    try {
+      const productService = require('./product');
+      const products = await productService.listProducts();
+      const activeProducts = products.filter(p => p.is_active === 1 || p.is_active === true);
+      if (activeProducts.length > 0) {
+        activeProductsText = activeProducts.map(p => `- Name: ${p.name}\n  Price: ${p.price ? `$${p.price}` : 'Price on request'}\n  Description: ${p.description || 'No description available.'}`).join('\n');
+      }
+    } catch (productErr) {
+      logger.error('Failed to load active products for prompt context', productErr);
+    }
+
     // 2. Build system context
     const toneGuidelines = agentRules?.tone_guidelines || {};
-    const baseSystemPrompt = aiOverrides.systemPrompt || buildSystemPrompt(aiConfig, toneGuidelines, intent, language, contactName, dynamicContext);
+    const baseSystemPrompt = aiOverrides.systemPrompt || buildSystemPrompt(aiConfig, toneGuidelines, intent, language, contactName, dynamicContext, activeProductsText);
 
     // 3. Define fallback chain of models to try
     const modelsToTry = [
@@ -313,7 +326,7 @@ async function generateResponse({ messageText, conversationHistory, intent, lang
 /**
  * Build system prompt from rules
  */
-function buildSystemPrompt(aiConfig, toneGuidelines, intent, language, contactName, dynamicContext = '') {
+function buildSystemPrompt(aiConfig, toneGuidelines, intent, language, contactName, dynamicContext = '', activeProductsText = '') {
   const culturalNotes = toneGuidelines.cultural_sensitivity?.notes?.join('\n- ') || '';
   const kb = getRules('knowledge');
   
@@ -330,7 +343,21 @@ FAQS & POLICIES:
 ${kb.faqs?.map(f => `Q: ${f.question}\nA: ${f.answer}`).join('\n')}
 - Refund Policy: ${kb.policies?.refund}
 - Privacy Policy: ${kb.policies?.privacy}
+`;
+  }
 
+  let productsSection = '';
+  if (activeProductsText) {
+    productsSection = `
+ACTIVE PRODUCTS & SERVICES FOR MARKETING:
+${activeProductsText}
+- IMPORTANT: Proactively promote or suggest these products/services to the customer when relevant to their inquiries!
+`;
+  }
+
+  let retrievedSection = '';
+  if (dynamicContext) {
+    retrievedSection = `
 ADDITIONAL BUSINESS KNOWLEDGE (RETRIEVED):
 ${dynamicContext}
 `;
@@ -339,13 +366,15 @@ ${dynamicContext}
   return `${aiConfig.system_context || 'You are the AI assistant for Pro CRM.'}
 
 ${kbSection}
+${productsSection}
+${retrievedSection}
 
 RULES:
 - Respond in ${language === 'si' ? 'Sinhala (සිංහල)' : 'English'}
 - Tone: ${toneGuidelines.style || 'professional_friendly'}
 - Maximum ${toneGuidelines.max_emojis_per_message || 2} emojis per message
 - Customer name: ${contactName || 'Customer'}
-- Use the BUSINESS CONTEXT provided above to answer accurately
+- Use the BUSINESS CONTEXT and ACTIVE PRODUCTS & SERVICES provided above to answer accurately
 - EMOTIONAL INTELLIGENCE: Detect if the customer is angry, frustrated, or urgent. If they are angry, be extremely apologetic and professional.
 - ESCALATION: If the customer expresses severe dissatisfaction or asks for a manager, acknowledge it and state that a human agent will follow up shortly.
 - If an appointment is requested, use the booking tools. If date/time is missing, ask for it nicely.

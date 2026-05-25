@@ -132,6 +132,10 @@
                     <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
                     <span>Contacts</span>
                 </a>
+                <a href="#" class="nav-item" data-page="products" onclick="navigateTo('products')">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a5 5 0 00-5 5v1H5a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V10a2 2 0 00-2-2h-2V7a5 5 0 00-5-5zm3 6H9V7a3 3 0 016 0v1zm-6 4a1 1 0 112 0 1 1 0 01-2 0zm6-1a1 1 0 100 2 1 1 0 000-2z"/></svg>
+                    <span>Products & Services</span>
+                </a>
 
                 <div class="nav-group-title">Automations</div>
                 <a href="#" class="nav-item" data-page="flow-builder" onclick="navigateTo('flow-builder')">
@@ -1573,9 +1577,36 @@
                             <button class="btn btn-primary btn-sm" onclick="saveFlowBuilder()">Save Flow</button>
                         </div>
                     </div>
-                    <div class="card" style="position: relative; height: 650px; overflow: hidden; background: #0b0f19; border: 1px solid var(--border-color); border-radius: var(--radius-lg);">
+                    <div class="card" style="position: relative; height: 650px; overflow: hidden; background: var(--bg-flow); border: 1px solid var(--border-color); border-radius: var(--radius-lg);">
                         <svg id="flow-connections-svg" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;"></svg>
                         <div id="flow-workspace" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; outline: none;"></div>
+                    </div>
+                </section>
+
+                <!-- Products Page -->
+                <section id="page-products" class="page">
+                    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div class="header-left">
+                            <h2>Products & Services</h2>
+                            <p>Manage products and services marketed by the AI</p>
+                        </div>
+                        <div class="header-right">
+                            <button class="btn btn-primary" onclick="showAddProductModal()">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                Add Product/Service
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="products-empty" class="card empty-state hidden">
+                        <div class="empty-state-icon" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">📦</div>
+                        <h3>No Products Registered</h3>
+                        <p>Get started by adding your first product or service.</p>
+                        <button class="btn btn-outline" style="margin-top: 1rem;" onclick="showAddProductModal()">Add Product</button>
+                    </div>
+
+                    <div id="products-grid" class="products-grid">
+                        <!-- Rendered dynamically -->
                     </div>
                 </section>
 
@@ -1941,6 +1972,43 @@
                 <button class="btn btn-outline" onclick="skipCsatAndResolve()">Skip & Resolve</button>
                 <button class="btn btn-primary" onclick="submitCsatAndResolve()" id="btn-submit-csat">Submit & Resolve</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Product Modal -->
+    <div id="modal-product" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 id="product-modal-title">Add Product/Service</h3>
+                <button class="btn-icon" onclick="closeProductModal()">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                </button>
+            </div>
+            <form id="product-form" onsubmit="handleSaveProduct(event)">
+                <input type="hidden" id="product-id">
+                <div class="modal-body" style="padding: 1.5rem 0;">
+                    <div class="form-group">
+                        <label>Product/Service Name</label>
+                        <input type="text" id="product-name" placeholder="e.g. Premium Plan" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="product-desc" rows="3" placeholder="Describe the product or service features..." required style="width:100%; padding:.7rem 1rem; background:var(--bg-input); border:1px solid var(--border-color); border-radius:var(--radius-md); color:var(--text-primary); font-family:inherit; outline:none; resize:vertical;"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Price</label>
+                        <input type="number" id="product-price" step="0.01" placeholder="e.g. 99.00">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+                        <input type="checkbox" id="product-active" checked style="width: 18px; height: 18px; cursor: pointer;">
+                        <label for="product-active" style="margin-bottom: 0; cursor: pointer; text-transform: none; font-size: 0.875rem;">Active for AI Marketing</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeProductModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="product-submit-btn">Save Product</button>
+                </div>
+            </form>
         </div>
     </div>
 

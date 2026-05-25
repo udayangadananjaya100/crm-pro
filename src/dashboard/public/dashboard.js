@@ -86,7 +86,8 @@ const TRANSLATIONS = {
     view_all: 'View All',
     view_logs: 'View Logs',
     search_placeholder: 'Search conversations...',
-    'flow-builder': 'Flow Builder'
+    'flow-builder': 'Flow Builder',
+    products: 'Products & Services'
   },
   si: {
     overview: 'දළ විශ්ලේෂණය',
@@ -123,7 +124,8 @@ const TRANSLATIONS = {
     view_all: 'සියල්ල බලන්න',
     view_logs: 'ලොග් බලන්න',
     search_placeholder: 'සංවාද සොයන්න...',
-    'flow-builder': 'නීති ප්‍රවාහය'
+    'flow-builder': 'නීති ප්‍රවාහය',
+    products: 'නිෂ්පාදන සහ සේවා'
   }
 };
 
@@ -647,6 +649,7 @@ function navigateTo(page) {
       break;
     case 'audit': loadAuditLogs(); break;
     case 'flow-builder': loadFlowBuilder(); break;
+    case 'products': loadProducts(); break;
   }
 }
 
@@ -4327,5 +4330,162 @@ async function saveComplianceRules() {
   });
   if (res) {
     showToast('Compliance rules saved successfully!', 'success');
+  }
+}
+
+// ─── PRODUCTS & SERVICES ───
+let cachedProductsList = [];
+
+async function loadProducts() {
+  const grid = document.getElementById('products-grid');
+  const empty = document.getElementById('products-empty');
+  grid.innerHTML = '<div class="skeleton-text" style="height: 100px;"></div>';
+  empty.classList.add('hidden');
+
+  const products = await apiCall('/api/products');
+  if (!products) {
+    grid.innerHTML = '<div class="empty-state">Error loading products.</div>';
+    return;
+  }
+
+  cachedProductsList = products;
+  renderProductsList(products);
+}
+
+function renderProductsList(products) {
+  const grid = document.getElementById('products-grid');
+  const empty = document.getElementById('products-empty');
+  
+  if (products.length === 0) {
+    grid.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+
+  empty.classList.add('hidden');
+  grid.innerHTML = products.map(product => {
+    const isChecked = (product.is_active === 1 || product.is_active === true) ? 'checked' : '';
+    return `
+      <div class="product-card card" id="product-card-${product.id}" style="padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; min-height: 160px;">
+        <div class="product-card-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+          <div class="product-info-top" style="display: flex; gap: 0.75rem; align-items: center;">
+            <span class="product-icon" style="font-size: 1.5rem;">📦</span>
+            <div class="product-title-group" style="display: flex; flex-direction: column;">
+              <h3 class="product-name-text" style="font-size: 0.95rem; font-weight: 700; margin: 0; color: var(--text-primary);">${escapeHtml(product.name)}</h3>
+              <span class="product-price-tag" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-green); margin-top: 2px;">${product.price ? `$${parseFloat(product.price).toFixed(2)}` : 'Price on Request'}</span>
+            </div>
+          </div>
+          <div class="product-actions-top" style="display: flex; gap: 4px;">
+            <button class="btn-icon" onclick="showEditProductModal('${product.id}')" title="Edit Product">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+            </button>
+            <button class="btn-icon" onclick="deleteProduct('${product.id}')" title="Delete Product" style="color: var(--accent-red);">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+          </div>
+        </div>
+        <p class="product-description-text" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 1.25rem; flex: 1;">${escapeHtml(product.description || 'No description provided.')}</p>
+        <div class="product-card-footer" style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+          <span class="status-badge-inline ${product.is_active ? 'active' : 'inactive'}" style="font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;">
+            ${product.is_active ? 'Active' : 'Inactive'}
+          </span>
+          <label class="switch-container">
+            <input type="checkbox" ${isChecked} onchange="toggleProduct('${product.id}', this)">
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function showAddProductModal() {
+  document.getElementById('product-modal-title').textContent = 'Add Product/Service';
+  document.getElementById('product-id').value = '';
+  document.getElementById('product-name').value = '';
+  document.getElementById('product-desc').value = '';
+  document.getElementById('product-price').value = '';
+  document.getElementById('product-active').checked = true;
+  document.getElementById('modal-product').classList.remove('hidden');
+}
+
+function showEditProductModal(id) {
+  const product = cachedProductsList.find(p => p.id === id);
+  if (!product) return;
+
+  document.getElementById('product-modal-title').textContent = 'Edit Product/Service';
+  document.getElementById('product-id').value = product.id;
+  document.getElementById('product-name').value = product.name;
+  document.getElementById('product-desc').value = product.description || '';
+  document.getElementById('product-price').value = product.price || '';
+  document.getElementById('product-active').checked = (product.is_active === 1 || product.is_active === true);
+  document.getElementById('modal-product').classList.remove('hidden');
+}
+
+function closeProductModal() {
+  document.getElementById('modal-product').classList.add('hidden');
+}
+
+async function handleSaveProduct(event) {
+  event.preventDefault();
+  const id = document.getElementById('product-id').value;
+  const name = document.getElementById('product-name').value;
+  const description = document.getElementById('product-desc').value;
+  const price = document.getElementById('product-price').value;
+  const is_active = document.getElementById('product-active').checked ? 1 : 0;
+
+  const payload = { name, description, price: price ? parseFloat(price) : null, is_active };
+
+  showToast('Saving product...', 'info');
+  let result;
+  if (id) {
+    result = await apiCall(`/api/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  } else {
+    result = await apiCall('/api/products', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  if (result) {
+    showToast('Product saved successfully!', 'success');
+    closeProductModal();
+    loadProducts();
+  }
+}
+
+async function deleteProduct(id) {
+  if (!confirm('Are you sure you want to delete this product/service?')) return;
+
+  showToast('Deleting product...', 'info');
+  const res = await apiCall(`/api/products/${id}`, { method: 'DELETE' });
+  if (res) {
+    showToast('Product deleted successfully!', 'success');
+    loadProducts();
+  }
+}
+
+async function toggleProduct(id, checkbox) {
+  const is_active = checkbox.checked ? 1 : 0;
+  const res = await apiCall(`/api/products/${id}/toggle`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_active })
+  });
+
+  if (res) {
+    showToast(`Product status updated!`, 'success');
+    const card = document.getElementById(`product-card-${id}`);
+    if (card) {
+      const badge = card.querySelector('.status-badge-inline');
+      if (badge) {
+        badge.className = `status-badge-inline ${is_active ? 'active' : 'inactive'}`;
+        badge.textContent = is_active ? 'Active' : 'Inactive';
+      }
+    }
+  } else {
+    checkbox.checked = !checkbox.checked;
   }
 }

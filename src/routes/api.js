@@ -15,6 +15,7 @@ const analyticsService = require('../services/analytics');
 const cannedResponseService = require('../services/cannedResponse');
 const scheduledMessageService = require('../services/scheduledMessage');
 const bookingService = require('../services/booking');
+const productService = require('../services/product');
 const auditLogger = require('../agents/auditLogger');
 const { getQueueStats } = require('../queues/messageQueue');
 const { getRulesVersion, reloadRules } = require('../utils/rulesLoader');
@@ -443,6 +444,52 @@ router.delete('/canned-responses/:id', authenticate, async (req, res) => {
   try {
     await cannedResponseService.deleteCannedResponse(req.params.id);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PRODUCTS & SERVICES ───
+router.get('/products', authenticate, async (req, res) => {
+  try {
+    const data = await productService.listProducts();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/products', authenticate, async (req, res) => {
+  try {
+    const data = await productService.createProduct(req.body);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/products/:id', authenticate, async (req, res) => {
+  try {
+    const data = await productService.updateProduct(req.params.id, req.body);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/products/:id', authenticate, async (req, res) => {
+  try {
+    await productService.deleteProduct(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/products/:id/toggle', authenticate, async (req, res) => {
+  try {
+    const data = await productService.toggleProductStatus(req.params.id, req.body.is_active);
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
