@@ -7,6 +7,8 @@ const geminiService = require('../src/services/gemini');
 const { initializeDatabase, close, query } = require('../src/config/database');
 const { loadAllRules } = require('../src/utils/rulesLoader');
 const logger = require('../src/utils/logger');
+const fs = require('fs');
+const path = require('path');
 
 const API_URL = 'http://localhost:3000/api';
 
@@ -39,18 +41,35 @@ async function runTests() {
     });
     console.log(`✅ API: Listed products. Count: ${listRes.data.length}`);
 
-    // 3. Create a test product
-    const createPayload = {
-      name: 'Test Auto Insurance Policy',
-      description: 'Comprehensive coverage for passenger vehicles with road assistance.',
-      price: 150.00,
-      is_active: 1
-    };
-    const createRes = await axios.post(`${API_URL}/products`, createPayload, {
+    // 3. Create a test product with attachments (using FormData)
+    const createForm = new FormData();
+    createForm.append('name', 'Test Auto Insurance Policy');
+    createForm.append('description', 'Comprehensive coverage for passenger vehicles with road assistance.');
+    createForm.append('price', '150.00');
+    createForm.append('is_active', '1');
+
+    // Add mock files
+    const imageBlob = new Blob(['mock image data'], { type: 'image/png' });
+    createForm.append('image', imageBlob, 'test_car.png');
+    const pdfBlob = new Blob(['mock pdf data'], { type: 'application/pdf' });
+    createForm.append('pdf', pdfBlob, 'test_brochure.pdf');
+
+    const createRes = await axios.post(`${API_URL}/products`, createForm, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     testProductId = createRes.data.id;
     console.log(`✅ API: Created product "${createRes.data.name}". ID: ${testProductId}`);
+    console.log(`   Attachments: Image: ${createRes.data.image_url}, PDF: ${createRes.data.pdf_url}`);
+
+    // Assert files were created physically in the uploads folder
+    const uploadsDir = path.join(__dirname, '..', 'src', 'dashboard', 'public');
+    const imagePath = path.join(uploadsDir, createRes.data.image_url.replace('/admin/', ''));
+    const pdfPath = path.join(uploadsDir, createRes.data.pdf_url.replace('/admin/', ''));
+    if (fs.existsSync(imagePath) && fs.existsSync(pdfPath)) {
+      console.log('✅ API: Attachments successfully written to public uploads folder.');
+    } else {
+      throw new Error('Attachments missing from public uploads folder');
+    }
 
     // Assert Knowledge Base sync on create
     const kbDocCheck = await query("SELECT id, status, metadata FROM knowledge_documents WHERE doc_type = 'product'");
@@ -68,18 +87,27 @@ async function runTests() {
     if (foundKbDoc && foundKbDoc.status === 'active') {
       syncedKbDocId = foundKbDoc.id;
       console.log(`✅ Knowledge Base: Document synced successfully on product creation. ID: ${syncedKbDocId}`);
+      
+      // Verify that the document content contains the attachment URLs
+      const docContent = await query("SELECT content FROM knowledge_chunks WHERE document_id = $1", [syncedKbDocId]);
+      const chunkText = docContent.rows[0]?.content || '';
+      if (chunkText.includes('Image URL:') && chunkText.includes('PDF Brochure URL:')) {
+        console.log('✅ Knowledge Base: Attachment URLs successfully formatted inside document chunks!');
+      } else {
+        throw new Error('Knowledge Base chunks are missing attachment URLs');
+      }
     } else {
       throw new Error('Knowledge Base document sync failed on creation');
     }
 
-    // 4. Update the product details
-    const updatePayload = {
-      name: 'Updated Test Auto Insurance',
-      description: 'Comprehensive vehicle coverage including towing and rental car support.',
-      price: 175.50,
-      is_active: 1
-    };
-    const updateRes = await axios.put(`${API_URL}/products/${testProductId}`, updatePayload, {
+    // 4. Update the product details (keep attachments)
+    const updateForm = new FormData();
+    updateForm.append('name', 'Updated Test Auto Insurance');
+    updateForm.append('description', 'Comprehensive vehicle coverage including towing and rental car support.');
+    updateForm.append('price', '175.50');
+    updateForm.append('is_active', '1');
+
+    const updateRes = await axios.put(`${API_URL}/products/${testProductId}`, updateForm, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`✅ API: Updated product name: "${updateRes.data.name}", Price: ${updateRes.data.price}`);
@@ -151,6 +179,13 @@ async function runTests() {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`✅ API: Deleted product. Success: ${deleteRes.data.success}`);
+
+    // Assert files were cleaned up physically
+    if (!fs.existsSync(imagePath) && !fs.existsSync(pdfPath)) {
+      console.log('✅ API: Attachment files successfully deleted from uploads folder.');
+    } else {
+      throw new Error('Attachment files were not cleaned up from disk');
+    }
 
     // Assert Knowledge Base sync on delete
     const kbDocCheckDelete = await query("SELECT id FROM knowledge_documents WHERE id = $1", [syncedKbDocId]);

@@ -1999,6 +1999,24 @@
                         <label>Price</label>
                         <input type="number" id="product-price" step="0.01" placeholder="e.g. 99.00">
                     </div>
+                    <div class="form-group">
+                        <label>Product Image / Flyer (Photo)</label>
+                        <input type="file" id="product-image-file" accept="image/*" style="padding: 0.5rem 0; width: 100%;">
+                        <div id="product-image-preview-container" class="hidden" style="margin-top: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">Current:</span>
+                            <span id="product-image-current-path" style="font-size: 0.75rem; color: var(--accent-blue); word-break: break-all; max-width: 250px;"></span>
+                            <button type="button" class="btn btn-outline" style="padding: 0.15rem 0.4rem; font-size: 0.65rem;" onclick="clearProductAttachment('image')">Clear</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>PDF Brochure / Document</label>
+                        <input type="file" id="product-pdf-file" accept="application/pdf" style="padding: 0.5rem 0; width: 100%;">
+                        <div id="product-pdf-preview-container" class="hidden" style="margin-top: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">Current:</span>
+                            <span id="product-pdf-current-path" style="font-size: 0.75rem; color: var(--accent-blue); word-break: break-all; max-width: 250px;"></span>
+                            <button type="button" class="btn btn-outline" style="padding: 0.15rem 0.4rem; font-size: 0.65rem;" onclick="clearProductAttachment('pdf')">Clear</button>
+                        </div>
+                    </div>
                     <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
                         <input type="checkbox" id="product-active" checked style="width: 18px; height: 18px; cursor: pointer;">
                         <label for="product-active" style="margin-bottom: 0; cursor: pointer; text-transform: none; font-size: 0.875rem;">Active for AI Marketing</label>

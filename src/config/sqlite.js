@@ -551,6 +551,8 @@ function initSchema() {
       description TEXT,
       price REAL,
       is_active INTEGER DEFAULT 1,
+      image_url TEXT,
+      pdf_url TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
@@ -563,6 +565,22 @@ function initSchema() {
   } catch (err) {
     if (!err.message.includes('duplicate column name')) {
       logger.error('Failed to alter contacts table in SQLite:', err.message);
+    }
+  }
+
+  try {
+    conn.exec('ALTER TABLE products ADD COLUMN image_url TEXT;');
+  } catch (err) {
+    if (!err.message.includes('duplicate column name')) {
+      logger.error('Failed to add image_url to products in SQLite:', err.message);
+    }
+  }
+
+  try {
+    conn.exec('ALTER TABLE products ADD COLUMN pdf_url TEXT;');
+  } catch (err) {
+    if (!err.message.includes('duplicate column name')) {
+      logger.error('Failed to add pdf_url to products in SQLite:', err.message);
     }
   }
 

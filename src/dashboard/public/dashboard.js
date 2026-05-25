@@ -4365,17 +4365,30 @@ function renderProductsList(products) {
   empty.classList.add('hidden');
   grid.innerHTML = products.map(product => {
     const isChecked = (product.is_active === 1 || product.is_active === true) ? 'checked' : '';
+    
+    // Check if product image exists to display thumbnail preview
+    const imagePreview = product.image_url ? 
+      `<img src="${product.image_url}" style="width: 48px; height: 48px; border-radius: var(--radius-sm); object-fit: cover; border: 1px solid var(--border-color);" alt="${escapeHtml(product.name)}">` :
+      `<span class="product-icon" style="font-size: 1.5rem;">📦</span>`;
+
+    // Check if PDF brochure exists to display download button
+    const pdfBadge = product.pdf_url ? 
+      `<div class="product-pdf-attachment" style="margin-top: 0.5rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.35rem;">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: var(--accent-red); flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        <a href="${product.pdf_url}" target="_blank" style="font-size: 0.75rem; color: var(--accent-blue); text-decoration: underline; font-weight: 500; word-break: break-all;">Download PDF Brochure</a>
+       </div>` : '';
+
     return `
-      <div class="product-card card" id="product-card-${product.id}" style="padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; min-height: 160px;">
+      <div class="product-card card" id="product-card-${product.id}" style="padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; min-height: 180px;">
         <div class="product-card-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
-          <div class="product-info-top" style="display: flex; gap: 0.75rem; align-items: center;">
-            <span class="product-icon" style="font-size: 1.5rem;">📦</span>
-            <div class="product-title-group" style="display: flex; flex-direction: column;">
-              <h3 class="product-name-text" style="font-size: 0.95rem; font-weight: 700; margin: 0; color: var(--text-primary);">${escapeHtml(product.name)}</h3>
+          <div class="product-info-top" style="display: flex; gap: 0.75rem; align-items: center; min-width: 0;">
+            ${imagePreview}
+            <div class="product-title-group" style="display: flex; flex-direction: column; min-width: 0;">
+              <h3 class="product-name-text" style="font-size: 0.95rem; font-weight: 700; margin: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(product.name)}</h3>
               <span class="product-price-tag" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-green); margin-top: 2px;">${product.price ? `$${parseFloat(product.price).toFixed(2)}` : 'Price on Request'}</span>
             </div>
           </div>
-          <div class="product-actions-top" style="display: flex; gap: 4px;">
+          <div class="product-actions-top" style="display: flex; gap: 4px; flex-shrink: 0;">
             <button class="btn-icon" onclick="showEditProductModal('${product.id}')" title="Edit Product">
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
             </button>
@@ -4384,7 +4397,8 @@ function renderProductsList(products) {
             </button>
           </div>
         </div>
-        <p class="product-description-text" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 1.25rem; flex: 1;">${escapeHtml(product.description || 'No description provided.')}</p>
+        <p class="product-description-text" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 0.5rem; flex: 1;">${escapeHtml(product.description || 'No description provided.')}</p>
+        ${pdfBadge}
         <div class="product-card-footer" style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
           <span class="status-badge-inline ${product.is_active ? 'active' : 'inactive'}" style="font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;">
             ${product.is_active ? 'Active' : 'Inactive'}
@@ -4399,6 +4413,21 @@ function renderProductsList(products) {
   }).join('');
 }
 
+let productCurrentImageUrl = null;
+let productCurrentPdfUrl = null;
+
+function clearProductAttachment(type) {
+  if (type === 'image') {
+    productCurrentImageUrl = '';
+    document.getElementById('product-image-preview-container').classList.add('hidden');
+    document.getElementById('product-image-file').value = '';
+  } else if (type === 'pdf') {
+    productCurrentPdfUrl = '';
+    document.getElementById('product-pdf-preview-container').classList.add('hidden');
+    document.getElementById('product-pdf-file').value = '';
+  }
+}
+
 function showAddProductModal() {
   document.getElementById('product-modal-title').textContent = 'Add Product/Service';
   document.getElementById('product-id').value = '';
@@ -4406,6 +4435,16 @@ function showAddProductModal() {
   document.getElementById('product-desc').value = '';
   document.getElementById('product-price').value = '';
   document.getElementById('product-active').checked = true;
+  
+  document.getElementById('product-image-file').value = '';
+  document.getElementById('product-pdf-file').value = '';
+  
+  productCurrentImageUrl = null;
+  productCurrentPdfUrl = null;
+  
+  document.getElementById('product-image-preview-container').classList.add('hidden');
+  document.getElementById('product-pdf-preview-container').classList.add('hidden');
+
   document.getElementById('modal-product').classList.remove('hidden');
 }
 
@@ -4419,6 +4458,29 @@ function showEditProductModal(id) {
   document.getElementById('product-desc').value = product.description || '';
   document.getElementById('product-price').value = product.price || '';
   document.getElementById('product-active').checked = (product.is_active === 1 || product.is_active === true);
+  
+  document.getElementById('product-image-file').value = '';
+  document.getElementById('product-pdf-file').value = '';
+
+  productCurrentImageUrl = product.image_url || null;
+  productCurrentPdfUrl = product.pdf_url || null;
+
+  const imagePreview = document.getElementById('product-image-preview-container');
+  if (product.image_url) {
+    document.getElementById('product-image-current-path').textContent = product.image_url.split('/').pop();
+    imagePreview.classList.remove('hidden');
+  } else {
+    imagePreview.classList.add('hidden');
+  }
+
+  const pdfPreview = document.getElementById('product-pdf-preview-container');
+  if (product.pdf_url) {
+    document.getElementById('product-pdf-current-path').textContent = product.pdf_url.split('/').pop();
+    pdfPreview.classList.remove('hidden');
+  } else {
+    pdfPreview.classList.add('hidden');
+  }
+
   document.getElementById('modal-product').classList.remove('hidden');
 }
 
@@ -4434,26 +4496,62 @@ async function handleSaveProduct(event) {
   const price = document.getElementById('product-price').value;
   const is_active = document.getElementById('product-active').checked ? 1 : 0;
 
-  const payload = { name, description, price: price ? parseFloat(price) : null, is_active };
+  const formData = new FormData();
+  formData.append('name', name);
+  formData.append('description', description);
+  if (price) formData.append('price', price);
+  formData.append('is_active', is_active);
 
-  showToast('Saving product...', 'info');
-  let result;
-  if (id) {
-    result = await apiCall(`/api/products/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload)
-    });
-  } else {
-    result = await apiCall('/api/products', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
+  if (productCurrentImageUrl === '') {
+    formData.append('image_url', '');
+  } else if (productCurrentImageUrl) {
+    formData.append('image_url', productCurrentImageUrl);
+  }
+  
+  if (productCurrentPdfUrl === '') {
+    formData.append('pdf_url', '');
+  } else if (productCurrentPdfUrl) {
+    formData.append('pdf_url', productCurrentPdfUrl);
   }
 
-  if (result) {
-    showToast('Product saved successfully!', 'success');
-    closeProductModal();
-    loadProducts();
+  const imageFile = document.getElementById('product-image-file').files[0];
+  if (imageFile) {
+    formData.append('image', imageFile);
+  }
+
+  const pdfFile = document.getElementById('product-pdf-file').files[0];
+  if (pdfFile) {
+    formData.append('pdf', pdfFile);
+  }
+
+  showToast('Saving product...', 'info');
+
+  try {
+    const headers = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+    const res = await fetch(`${API_BASE}/api/products${id ? `/${id}` : ''}`, {
+      method: id ? 'PUT' : 'POST',
+      headers,
+      body: formData
+    });
+
+    if (res.status === 401) {
+      handleLogout();
+      return;
+    }
+
+    const data = await res.json();
+    if (data && !data.error) {
+      showToast('Product saved successfully!', 'success');
+      closeProductModal();
+      loadProducts();
+    } else {
+      showToast(data.error || 'Failed to save product.', 'error');
+    }
+  } catch (err) {
+    console.error('Error saving product:', err);
+    showToast('Failed to save product.', 'error');
   }
 }
 

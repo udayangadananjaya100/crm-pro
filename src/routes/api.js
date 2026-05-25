@@ -459,27 +459,127 @@ router.get('/products', authenticate, async (req, res) => {
   }
 });
 
-router.post('/products', authenticate, async (req, res) => {
+function handleProductUpload(file, productId, type) {
+  if (!file) return null;
+  const uploadsDir = path.join(__dirname, '..', 'dashboard', 'public', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  const ext = path.extname(file.originalname).toLowerCase();
+  const filename = `${type}_${productId}_${Date.now()}${ext}`;
+  const targetPath = path.join(uploadsDir, filename);
+  fs.copyFileSync(file.path, targetPath);
+  fs.unlinkSync(file.path); // Clean up temp file
+  return `/admin/uploads/${filename}`;
+}
+
+router.post('/products', authenticate, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]), async (req, res) => {
   try {
-    const data = await productService.createProduct(req.body);
+    const productId = require('uuid').v4();
+    let { name, description, price, is_active, image_url, pdf_url } = req.body;
+
+    if (req.files) {
+      if (req.files.image && req.files.image[0]) {
+        image_url = handleProductUpload(req.files.image[0], productId, 'image');
+      }
+      if (req.files.pdf && req.files.pdf[0]) {
+        pdf_url = handleProductUpload(req.files.pdf[0], productId, 'pdf');
+      }
+    }
+
+    const data = await productService.createProduct({
+      id: productId,
+      name,
+      description,
+      price,
+      is_active,
+      image_url,
+      pdf_url
+    });
     res.json(data);
   } catch (err) {
+    if (req.files) {
+      if (req.files.image && req.files.image[0] && fs.existsSync(req.files.image[0].path)) {
+        fs.unlinkSync(req.files.image[0].path);
+      }
+      if (req.files.pdf && req.files.pdf[0] && fs.existsSync(req.files.pdf[0].path)) {
+        fs.unlinkSync(req.files.pdf[0].path);
+      }
+    }
     res.status(500).json({ error: err.message });
   }
 });
 
-router.put('/products/:id', authenticate, async (req, res) => {
+router.put('/products/:id', authenticate, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]), async (req, res) => {
   try {
-    const data = await productService.updateProduct(req.params.id, req.body);
+    const productId = req.params.id;
+    let { name, description, price, is_active, image_url, pdf_url } = req.body;
+
+    const existing = await query("SELECT image_url, pdf_url FROM products WHERE id = $1", [productId]);
+    let currentImageUrl = existing.rows[0]?.image_url || null;
+    let currentPdfUrl = existing.rows[0]?.pdf_url || null;
+
+    if (req.files) {
+      if (req.files.image && req.files.image[0]) {
+        currentImageUrl = handleProductUpload(req.files.image[0], productId, 'image');
+      }
+      if (req.files.pdf && req.files.pdf[0]) {
+        currentPdfUrl = handleProductUpload(req.files.pdf[0], productId, 'pdf');
+      }
+    }
+
+    if (image_url !== undefined) {
+      currentImageUrl = image_url;
+    }
+    if (pdf_url !== undefined) {
+      currentPdfUrl = pdf_url;
+    }
+
+    const data = await productService.updateProduct(productId, {
+      name,
+      description,
+      price,
+      is_active,
+      image_url: currentImageUrl,
+      pdf_url: currentPdfUrl
+    });
     res.json(data);
   } catch (err) {
+    if (req.files) {
+      if (req.files.image && req.files.image[0] && fs.existsSync(req.files.image[0].path)) {
+        fs.unlinkSync(req.files.image[0].path);
+      }
+      if (req.files.pdf && req.files.pdf[0] && fs.existsSync(req.files.pdf[0].path)) {
+        fs.unlinkSync(req.files.pdf[0].path);
+      }
+    }
     res.status(500).json({ error: err.message });
   }
 });
 
 router.delete('/products/:id', authenticate, async (req, res) => {
   try {
-    await productService.deleteProduct(req.params.id);
+    const productId = req.params.id;
+    const existing = await query("SELECT image_url, pdf_url FROM products WHERE id = $1", [productId]);
+    if (existing.rows.length > 0) {
+      const { image_url, pdf_url } = existing.rows[0];
+      const uploadsDir = path.join(__dirname, '..', 'dashboard', 'public');
+
+      if (image_url && image_url.startsWith('/admin/uploads/')) {
+        const imagePath = path.join(uploadsDir, image_url.replace('/admin/', ''));
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
+      }
+      if (pdf_url && pdf_url.startsWith('/admin/uploads/')) {
+        const pdfPath = path.join(uploadsDir, pdf_url.replace('/admin/', ''));
+        if (fs.existsSync(pdfPath)) {
+          fs.unlinkSync(pdfPath);
+        }
+      }
+    }
+
+    await productService.deleteProduct(productId);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

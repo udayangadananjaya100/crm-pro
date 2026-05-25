@@ -7,14 +7,22 @@ const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
 const knowledgeService = require('./knowledge');
 
-function formatProductKnowledgeContent({ name, description, price, is_active }) {
+function formatProductKnowledgeContent({ name, description, price, is_active, image_url, pdf_url }) {
   const statusText = (is_active === true || is_active === 1 || is_active === '1' || is_active === 'true') ? 'Active' : 'Inactive';
   const priceText = price ? `$${parseFloat(price).toFixed(2)}` : 'Price on request';
-  return `Product/Service Details:
+  let content = `Product/Service Details:
 - Name: ${name}
 - Price: ${priceText}
 - Status: ${statusText} (Only active products are marketed by the AI)
 - Description: ${description || 'No description available.'}`;
+
+  if (image_url) {
+    content += `\n- Image URL: ${image_url}`;
+  }
+  if (pdf_url) {
+    content += `\n- PDF Brochure URL: ${pdf_url}`;
+  }
+  return content;
 }
 
 async function listProducts() {
@@ -27,45 +35,45 @@ async function listProducts() {
   }
 }
 
-async function createProduct({ name, description, price, is_active }) {
+async function createProduct({ id, name, description, price, is_active, image_url, pdf_url }) {
   try {
-    const id = uuidv4();
+    const prodId = id || uuidv4();
     const isActiveVal = (is_active === true || is_active === 1 || is_active === '1') ? 1 : 0;
     await query(
-      'INSERT INTO products (id, name, description, price, is_active) VALUES ($1, $2, $3, $4, $5)',
-      [id, name, description || null, price ? parseFloat(price) : null, isActiveVal]
+      'INSERT INTO products (id, name, description, price, is_active, image_url, pdf_url) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [prodId, name, description || null, price ? parseFloat(price) : null, isActiveVal, image_url || null, pdf_url || null]
     );
 
     // Sync to Knowledge Base
     try {
-      const content = formatProductKnowledgeContent({ name, description, price, is_active });
+      const content = formatProductKnowledgeContent({ name, description, price, is_active, image_url, pdf_url });
       const kbDoc = await knowledgeService.addDocument({
         title: `Product: ${name}`,
         content,
         type: 'product',
         category: 'products',
-        metadata: { product_id: id }
+        metadata: { product_id: prodId }
       });
       if (isActiveVal === 0) {
         await query("UPDATE knowledge_documents SET status = 'inactive' WHERE id = $1", [kbDoc.docId]);
       }
     } catch (kbErr) {
-      logger.error('Failed to sync created product to knowledge base', { productId: id, error: kbErr.message });
+      logger.error('Failed to sync created product to knowledge base', { productId: prodId, error: kbErr.message });
     }
 
-    return { id, name, description, price, is_active: isActiveVal === 1 };
+    return { id: prodId, name, description, price, is_active: isActiveVal === 1, image_url, pdf_url };
   } catch (err) {
     logger.error('Error creating product', { error: err.message });
     throw err;
   }
 }
 
-async function updateProduct(id, { name, description, price, is_active }) {
+async function updateProduct(id, { name, description, price, is_active, image_url, pdf_url }) {
   try {
     const isActiveVal = (is_active === true || is_active === 1 || is_active === '1') ? 1 : 0;
     await query(
-      'UPDATE products SET name = $1, description = $2, price = $3, is_active = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5',
-      [name, description || null, price ? parseFloat(price) : null, isActiveVal, id]
+      'UPDATE products SET name = $1, description = $2, price = $3, is_active = $4, image_url = $5, pdf_url = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7',
+      [name, description || null, price ? parseFloat(price) : null, isActiveVal, image_url || null, pdf_url || null, id]
     );
 
     // Sync update to Knowledge Base
@@ -83,7 +91,7 @@ async function updateProduct(id, { name, description, price, is_active }) {
         }
       }
 
-      const content = formatProductKnowledgeContent({ name, description, price, is_active });
+      const content = formatProductKnowledgeContent({ name, description, price, is_active, image_url, pdf_url });
 
       if (kbDocId) {
         await knowledgeService.updateDocument(kbDocId, content);
@@ -107,7 +115,7 @@ async function updateProduct(id, { name, description, price, is_active }) {
       logger.error('Failed to sync product update to knowledge base', { productId: id, error: kbErr.message });
     }
 
-    return { id, name, description, price, is_active: isActiveVal === 1 };
+    return { id, name, description, price, is_active: isActiveVal === 1, image_url, pdf_url };
   } catch (err) {
     logger.error('Error updating product', { error: err.message });
     throw err;
@@ -180,7 +188,9 @@ async function toggleProductStatus(id, is_active) {
             name: prod.name,
             description: prod.description,
             price: prod.price,
-            is_active: isActiveVal === 1
+            is_active: isActiveVal === 1,
+            image_url: prod.image_url,
+            pdf_url: prod.pdf_url
           });
           await knowledgeService.updateDocument(kbDocId, content);
         }
